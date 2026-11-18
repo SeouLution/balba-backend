@@ -1,9 +1,10 @@
 openapi: 3.1.0
 info:
   title: "SeouLution API"
-  version: 0.2.0-draft
+  version: 0.4.0-draft
   description: |
-    Figma `2차 와이어프레임`(node 131:472) 중 '후순위'를 제외한 화면에 **꼭 필요한 API만** 정의합니다.
+    Figma `SeouLution 와이어프래임`의 '시연시 보여줄 화면'(node 1:2) 중 '후순위'로 덮인 화면을 제외한 화면에 **꼭 필요한 API만** 정의합니다.
+    버튼만 있고 화면이 그려지지 않은 기능(POS 컴퓨터에서 올리기 · 칸 고치기 · 재료 상세 · 재료 직접 추가 · 전체 메뉴 예측 보기 · 지난 발주서 다시 열기 · 배달앱 선택 · 마감할인 등록 방법)과 후순위 기능(붐비는 시간 맞추기 · 앱 등록 확인)은 넣지 않습니다.
 
     - 날짜 `YYYY-MM-DD`, 시각 `HH:mm`(Asia/Seoul), 금액은 원 단위 정수
     - 엑셀 반영 · 영수증 읽기는 비동기: 접수(202) 후 상태 조회
@@ -11,9 +12,8 @@ info:
     ## 공통 규칙
     - **성공 상태 코드**: 201 리소스를 만들고 돌려줌 · 202 비동기 접수(본문은 조회에 쓸 `id`뿐이거나 없음) · 200 그 외 본문 있음 · 204 본문 없음
     - **실패 응답**: 본문은 항상 `{ code }`이고, 문구는 프론트가 `code`로 정합니다.
-      `INVALID_REQUEST` 422 · `NOT_FOUND` 404 · `UPLOAD_CODE_INVALID` 404 · `DUPLICATE_FILE` 409 · `INTERNAL_ERROR` 500
-    - **비동기 작업 실패**: `status: FAILED` + `error.code`
-    - **목록**: `{ items }`. 더 불러올 수 있으면 `nextCursor`(null이면 끝)
+      `INVALID_REQUEST` 422 · `NOT_FOUND` 404 · `INTERNAL_ERROR` 500
+    - **목록**: `{ items }`
     - **다른 리소스 참조**: 응답은 `{ id, name }` 객체(`menu` · `ingredient` · `supplier`), 요청은 `~Id`
     - **수량**: 메뉴 수량은 숫자 + 같은 객체의 `unit`, 재료 수량은 `{ value, unit }`
     - **서버가 만든 문장**: 필드 이름은 `title` · `message` · `text` · `~Text`만 씁니다.
@@ -65,70 +65,6 @@ paths:
       responses:
         "204": { description: "저장됨" }
         default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/menu-board-scans:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-    post:
-      tags: [1.0 시작하기]
-      operationId: scanMenuBoard
-      summary: "1.2-1 메뉴판 사진에서 메뉴 이름 · 판매가 읽기"
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [image]
-              properties:
-                image: { type: string, contentMediaType: image/jpeg }
-      responses:
-        "200":
-          description: "읽은 메뉴 이름 · 판매가(저장 안 함)"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/MenuBoardScanResult" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/menus:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-    put:
-      tags: [1.0 시작하기]
-      operationId: saveMenus
-      summary: "1.2-1 메뉴 저장 ('다음 · 평소 판매량')"
-      description: "메뉴판 · 직접 입력으로 넣은 메뉴 전체를 보낸 목록으로 바꿉니다. 돌아와서 고친 뒤 다시 저장해도 중복되지 않습니다."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MenuBatchSave" }
-      responses:
-        "200":
-          description: "저장된 메뉴"
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
-                  items:
-                    type: array
-                    items: { $ref: "#/components/schemas/Menu" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/baseline-sales:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-    put:
-      tags: [1.0 시작하기]
-      operationId: putBaselineSales
-      summary: "1.2-2 평소 판매량 저장"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/BaselineSales" }
-      responses:
-        "204": { description: "저장됨" }
-        default: { $ref: "#/components/responses/Error" }
   /stores/{storeId}/ingredient-candidates:
     parameters:
       - $ref: "#/components/parameters/StoreId"
@@ -149,7 +85,7 @@ paths:
                   generationStatus:
                     type: string
                     description: "AI 레시피 · 재료 후보 생성 상태(GENERATING이면 잠시 후 다시 조회)"
-                    enum: [GENERATING, READY, FAILED]
+                    enum: [GENERATING, READY]
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/IngredientCandidate" }
@@ -183,16 +119,7 @@ paths:
     get:
       tags: [1.0 시작하기]
       operationId: listRecipes
-      summary: "1.6 · 5.9-2 레시피 초안"
-      parameters:
-        - name: menuIds
-          in: query
-          description: "쉼표 구분. 생략 시 전체"
-          style: form
-          explode: false
-          schema:
-            type: array
-            items: { type: string }
+      summary: "1.6 레시피 초안"
       responses:
         "200":
           description: "메뉴별 레시피"
@@ -209,7 +136,7 @@ paths:
     put:
       tags: [1.0 시작하기]
       operationId: saveRecipes
-      summary: "1.6 '저장하고 홈으로' · 5.9-2 '저장하고 끝내기'"
+      summary: "1.6 '저장하고 홈으로'"
       requestBody:
         required: true
         content:
@@ -219,15 +146,14 @@ paths:
         "204": { description: "저장됨" }
         default: { $ref: "#/components/responses/Error" }
 
-  # ───────────── 엑셀 올리기 (1.2~1.3, 5.6~5.9) ─────────────
+  # ───────────── 엑셀 올리기 (1.2~1.3) ─────────────
   /stores/{storeId}/sales-imports:
     parameters:
       - $ref: "#/components/parameters/StoreId"
     post:
       tags: [엑셀 올리기]
       operationId: createSalesImport
-      summary: "1.2 · 5.6-1 이 기기에서 엑셀 올리기"
-      description: "이미 올린 파일이면 409. 기억된 POS 형식이면 열 확인 없이 바로 반영합니다."
+      summary: "1.2 이 기기에서 엑셀 올리기"
       requestBody:
         required: true
         content:
@@ -250,7 +176,6 @@ paths:
                 required: [id]
                 properties:
                   id: { type: string, description: "진행 상태 조회에 쓰는 importId" }
-        "409": { $ref: "#/components/responses/Error", description: "DUPLICATE_FILE" }
         default: { $ref: "#/components/responses/Error" }
   /stores/{storeId}/sales-imports/{importId}:
     parameters:
@@ -259,10 +184,10 @@ paths:
     get:
       tags: [엑셀 올리기]
       operationId: getSalesImport
-      summary: "1.3 열 확인 · 5.8 읽는 중 · 5.9 반영 완료"
+      summary: "1.3 열 확인 (진행 상태 조회)"
       responses:
         "200":
-          description: "진행 상태 · 결과"
+          description: "진행 상태 · 판별 결과"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/SalesImport" }
@@ -274,117 +199,9 @@ paths:
     post:
       tags: [엑셀 올리기]
       operationId: confirmSalesImport
-      summary: "1.3 열 확인 · 1.3-1 수량 칸 고르기"
-      description: "고친 열만 보냅니다. 같은 POS 형식은 기억해서 다음부터 이 단계를 건너뜁니다."
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/ColumnMapping" }
+      summary: "1.3 열 확인"
       responses:
         "202": { description: "반영 재개" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/sales-imports/{importId}/menu-resolutions:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-      - $ref: "#/components/parameters/ImportId"
-    post:
-      tags: [엑셀 올리기]
-      operationId: resolveNewMenus
-      summary: "5.9-1 새 메뉴 확인 ('새 메뉴예요' / '이름을 바꾼 거예요')"
-      description: "새 메뉴는 비슷한 메뉴를 바탕으로 레시피 초안을 만들고(5.9-2), 이름만 바뀐 메뉴는 기존 기록을 이어 씁니다."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/MenuResolutionRequest" }
-      responses:
-        "200":
-          description: "새로 만든 메뉴 id(5.9-2로 이동)"
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [createdMenuIds]
-                properties:
-                  createdMenuIds:
-                    type: array
-                    items: { type: string }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/upload-sessions:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-    post:
-      tags: [엑셀 올리기]
-      operationId: createUploadSession
-      summary: "1.2 · 5.7 POS 컴퓨터에서 올리기 — 주소 · 연결 코드 발급"
-      responses:
-        "201":
-          description: "연결 코드(10분 유효)"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/UploadSession" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/upload-sessions/{sessionId}:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-      - $ref: "#/components/parameters/SessionId"
-    get:
-      tags: [엑셀 올리기]
-      operationId: getUploadSession
-      summary: "5.7 '컴퓨터에서 파일을 기다리는 중…' (파일 도착하면 salesImportId 채워짐)"
-      responses:
-        "200":
-          description: "세션 상태"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/UploadSession" }
-        default: { $ref: "#/components/responses/Error" }
-  /pc-upload/verify:
-    post:
-      tags: [엑셀 올리기]
-      operationId: verifyPcUploadCode
-      summary: "(POS 컴퓨터 웹) 연결 코드 확인"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [code]
-              properties:
-                code: { type: string, pattern: "^[0-9]{6}$" }
-      responses:
-        "200":
-          description: "확인됨"
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  storeName: { type: string, examples: ["행복분식"] }
-        "404": { $ref: "#/components/responses/Error", description: "UPLOAD_CODE_INVALID" }
-        default: { $ref: "#/components/responses/Error" }
-  /pc-upload/files:
-    post:
-      tags: [엑셀 올리기]
-      operationId: uploadFromPc
-      summary: "(POS 컴퓨터 웹) 엑셀 끌어다 놓기"
-      requestBody:
-        required: true
-        content:
-          multipart/form-data:
-            schema:
-              type: object
-              required: [code, file]
-              properties:
-                code: { type: string, pattern: "^[0-9]{6}$" }
-                file:
-                  { type: string, contentMediaType: application/octet-stream }
-      responses:
-        "202": { description: "받음" }
-        "404": { $ref: "#/components/responses/Error", description: "UPLOAD_CODE_INVALID" }
-        "409": { $ref: "#/components/responses/Error", description: "DUPLICATE_FILE" }
         default: { $ref: "#/components/responses/Error" }
 
   # ───────────── 2.0 홈 ─────────────
@@ -394,8 +211,8 @@ paths:
     get:
       tags: [2.0 홈]
       operationId: getHome
-      summary: "2.0 전날 밤 · 2.2 당일 아침 · 2.5~2.7-1 상태 변형"
-      description: "날씨 · 근처 행사 · 예측 상위 3개 · 발주 요약 · 주의할 것 · 3.9 팝업을 한 번에 내려줍니다."
+      summary: "2.0-1 온보딩 직후 · 2.2 당일 아침 · 2.7-1 행사 펼친 상태 · 2.9 행사 당일 아침"
+      description: "날씨 · 근처 행사 · 예측 상위 3개 · 발주 요약 · 주의할 것을 한 번에 내려줍니다. 전날 밤 화면과 당일 아침 화면 중 무엇을 그릴지는 `view`로 내려주며, 두 화면이 바뀌는 시각 기준은 **미정**입니다."
       responses:
         "200":
           description: "홈"
@@ -403,46 +220,16 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Home" }
         default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/forecasts/{date}:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-      - $ref: "#/components/parameters/Date"
-    get:
-      tags: [2.0 홈]
-      operationId: getForecast
-      summary: "메뉴 12개 전체 보기"
-      responses:
-        "200":
-          description: "메뉴별 예측"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Forecast" }
-        default: { $ref: "#/components/responses/Error" }
   /stores/{storeId}/forecasts/{date}/menus/{menuId}:
     parameters:
       - $ref: "#/components/parameters/StoreId"
       - $ref: "#/components/parameters/Date"
       - $ref: "#/components/parameters/MenuId"
-    get:
-      tags: [2.0 홈]
-      operationId: getForecastExplanation
-      summary: "2.1 근거 보기"
-      responses:
-        "200":
-          description: "계산 과정"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ForecastExplanation" }
-        default: { $ref: "#/components/responses/Error" }
     put:
       tags: [2.0 홈]
       operationId: adjustForecast
-      summary: "준비량 +/− · 2.1 '이 숫자로 정하기'"
-      description: "저장하고 재료 발주량 · 금액을 다시 계산해 돌려줍니다. `dryRun=true`면 저장 없이 계산만."
-      parameters:
-        - name: dryRun
-          in: query
-          schema: { type: boolean, default: false }
+      summary: "2.0-1 · 2.7-1 준비량 +/−"
+      description: "저장하고 재료 발주량 · 금액을 다시 계산해 돌려줍니다."
       requestBody:
         required: true
         content:
@@ -480,28 +267,6 @@ paths:
       responses:
         "204": { description: "기록됨" }
         default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/alerts/{alertId}/ack:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-      - name: alertId
-        in: path
-        required: true
-        schema: { type: string }
-    post:
-      tags: [2.0 홈]
-      operationId: acknowledgeAlert
-      summary: "3.9 '확인했어요' · '다시 표시하지 않기'"
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                dontShowAgain: { type: boolean, default: false }
-      responses:
-        "204": { description: "확인됨" }
-        default: { $ref: "#/components/responses/Error" }
 
   # ───────────── 3.0 발주 ─────────────
   /stores/{storeId}/order-plans/{targetDate}:
@@ -511,8 +276,8 @@ paths:
     get:
       tags: [3.0 발주]
       operationId: getOrderPlan
-      summary: "3.0 발주 확인 · 3.8 상단 '내일 발주'"
-      description: "오늘이 주문 요일인 거래처만 묶어 발주량과 단가를 돌려줍니다. 줄 금액 · 합계는 프론트가 수량 × 단가로 계산합니다. +/−로 바꾼 수량은 '발주서 만들기' 때 함께 보냅니다."
+      summary: "2.8 행사 반영 발주 · 3.8 상단 '내일 발주'"
+      description: "오늘이 주문 요일인 거래처만 묶어 발주량과 단가를 돌려줍니다. 줄 금액 · 합계는 프론트가 수량 × 단가로 계산합니다. +/−로 바꾼 수량은 '발주서 만들기' 때 함께 보냅니다. 근처 행사로 발주량을 늘렸으면 `events`와 줄별 `eventDiff`로 알려줍니다."
       responses:
         "200":
           description: "발주 제안"
@@ -527,10 +292,6 @@ paths:
       tags: [3.0 발주]
       operationId: listPurchaseOrders
       summary: "3.8 지난 발주서"
-      parameters:
-        - name: cursor
-          in: query
-          schema: { type: string }
       responses:
         "200":
           description: "최신순"
@@ -543,12 +304,11 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/PurchaseOrderSummary" }
-                  nextCursor: { type: [string, "null"] }
         default: { $ref: "#/components/responses/Error" }
     post:
       tags: [3.0 발주]
       operationId: createPurchaseOrders
-      summary: "3.0 '발주서 만들기' · 3.8 '복사해서 고치기'"
+      summary: "2.8 '발주서 만들기'"
       description: "거래처별 발주서와 보낼 문구를 만듭니다."
       requestBody:
         required: true
@@ -557,7 +317,7 @@ paths:
             schema: { $ref: "#/components/schemas/PurchaseOrderCreate" }
       responses:
         "201":
-          description: "거래처별 발주서"
+          description: "거래처별 발주서(3.1 화면)"
           content:
             application/json:
               schema:
@@ -567,21 +327,6 @@ paths:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/PurchaseOrder" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/purchase-orders/{purchaseOrderId}:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-      - $ref: "#/components/parameters/PurchaseOrderId"
-    get:
-      tags: [3.0 발주]
-      operationId: getPurchaseOrder
-      summary: "3.1 발주서 · 3.8 지난 발주서 열기"
-      responses:
-        "200":
-          description: "발주서"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/PurchaseOrder" }
         default: { $ref: "#/components/responses/Error" }
   /stores/{storeId}/purchase-orders/{purchaseOrderId}/send-records:
     parameters:
@@ -625,53 +370,6 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/IngredientList" }
-        default: { $ref: "#/components/responses/Error" }
-    post:
-      tags: [3.0 재료 · 영수증]
-      operationId: createIngredient
-      summary: "3.2 '+ 추가'"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/IngredientCreate" }
-      responses:
-        "201":
-          description: "생성됨"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/IngredientDetail" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/ingredients/{ingredientId}:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-      - $ref: "#/components/parameters/IngredientId"
-    get:
-      tags: [3.0 재료 · 영수증]
-      operationId: getIngredient
-      summary: "3.3 재료 상세"
-      responses:
-        "200":
-          description: "재료 상세"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/IngredientDetail" }
-        default: { $ref: "#/components/responses/Error" }
-    patch:
-      tags: [3.0 재료 · 영수증]
-      operationId: updateIngredient
-      summary: "3.3 '저장' · 5.9-2 김치 '추가하기'(status → CORE)"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/IngredientUpdate" }
-      responses:
-        "200":
-          description: "수정됨"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/IngredientDetail" }
         default: { $ref: "#/components/responses/Error" }
   /stores/{storeId}/suppliers:
     parameters:
@@ -758,7 +456,7 @@ paths:
     get:
       tags: [3.0 재료 · 영수증]
       operationId: getReceiptScan
-      summary: "3.4 영수증 인식 결과 · 3.6 거래처별 자동 분류"
+      summary: "3.6 거래처별 자동 분류"
       responses:
         "200":
           description: "읽은 결과"
@@ -773,19 +471,15 @@ paths:
     post:
       tags: [3.0 재료 · 영수증]
       operationId: confirmReceiptScan
-      summary: "3.4 '입고로 저장' · 3.6 '저장'"
-      description: "거래처 생성 · 단가 기록 · 입고를 한 번에 처리합니다. 응답은 1.5-1 요약에 씁니다."
+      summary: "3.6 '저장'"
+      description: "거래처 생성 · 단가 기록 · 입고를 한 번에 처리합니다."
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema: { $ref: "#/components/schemas/ReceiptScanConfirm" }
       responses:
-        "200":
-          description: "저장 결과"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/ReceiptScanConfirmResult" }
+        "204": { description: "저장됨" }
         default: { $ref: "#/components/responses/Error" }
 
   # ───────────── 4.0 할인 ─────────────
@@ -795,10 +489,10 @@ paths:
     get:
       tags: [4.0 할인]
       operationId: getDiscountRecommendations
-      summary: "4.0 할인 탭"
+      summary: "4.0 할인 탭 상단 카드 · 4.0-2 할인 추천 목록"
       responses:
         "200":
-          description: "할인 추천 · 남을 재고 · 배달앱 설정"
+          description: "할인 추천 · 남을 재고"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DiscountRecommendations" }
@@ -809,7 +503,7 @@ paths:
     get:
       tags: [4.0 할인]
       operationId: listDiscounts
-      summary: "4.6 할인 기록"
+      summary: "4.0 할인 기록 (오늘 · 이번 주 · 전체)"
       parameters:
         - name: range
           in: query
@@ -817,9 +511,6 @@ paths:
             type: string
             enum: [TODAY, THIS_WEEK, ALL]
             default: TODAY
-        - name: cursor
-          in: query
-          schema: { type: string }
       responses:
         "200":
           description: "최신순"
@@ -852,64 +543,6 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Discount" }
         default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/discounts/{discountId}/channels/{appCode}:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-      - name: discountId
-        in: path
-        required: true
-        schema: { type: string }
-      - $ref: "#/components/parameters/AppCode"
-    put:
-      tags: [4.0 할인]
-      operationId: updateDiscountChannel
-      summary: "4.3 '등록했어요' / '아직요'"
-      description: "'아직요'면 할인 시작 30분 전에 다시 알립니다."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [status]
-              properties:
-                status: { type: string, enum: [REGISTERED, NOT_YET] }
-      responses:
-        "200":
-          description: "갱신된 할인"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/Discount" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/delivery-app-settings:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-    put:
-      tags: [4.0 할인]
-      operationId: putDeliveryAppSettings
-      summary: "4.4 배달앱 선택 '저장'"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: "#/components/schemas/DeliveryAppSettings" }
-      responses:
-        "204": { description: "저장됨" }
-        default: { $ref: "#/components/responses/Error" }
-  /discount-guides/{appCode}:
-    parameters:
-      - $ref: "#/components/parameters/AppCode"
-    get:
-      tags: [4.0 할인]
-      operationId: getDiscountGuide
-      summary: "4.5 마감할인 등록 방법 (앱 업데이트에 맞춰 서버에서 관리)"
-      responses:
-        "200":
-          description: "단계별 가이드"
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/DiscountGuide" }
-        default: { $ref: "#/components/responses/Error" }
 
 components:
   responses:
@@ -929,18 +562,8 @@ components:
       in: path
       required: true
       schema: { type: string }
-    SessionId:
-      name: sessionId
-      in: path
-      required: true
-      schema: { type: string }
     MenuId:
       name: menuId
-      in: path
-      required: true
-      schema: { type: string }
-    IngredientId:
-      name: ingredientId
       in: path
       required: true
       schema: { type: string }
@@ -954,11 +577,6 @@ components:
       in: path
       required: true
       schema: { type: string }
-    AppCode:
-      name: appCode
-      in: path
-      required: true
-      schema: { $ref: "#/components/schemas/DeliveryAppCode" }
     Date:
       name: date
       in: path
@@ -975,14 +593,7 @@ components:
     # ───────── 공통 ─────────
     ErrorCode:
       type: string
-      enum:
-        [
-          INVALID_REQUEST,
-          NOT_FOUND,
-          UPLOAD_CODE_INVALID,
-          DUPLICATE_FILE,
-          INTERNAL_ERROR,
-        ]
+      enum: [INVALID_REQUEST, NOT_FOUND, INTERNAL_ERROR]
     Error:
       type: object
       required: [code]
@@ -1007,12 +618,6 @@ components:
             description: "표시용 단위 라벨",
             examples: ["판", "줄", "인분", "kg", "봉"],
           }
-    QuantityRange:
-      type: object
-      required: [min, max]
-      properties:
-        min: { type: number, examples: [44] }
-        max: { type: number, examples: [54] }
     MenuRef:
       type: object
       required: [id, name]
@@ -1031,13 +636,6 @@ components:
       properties:
         id: { type: string }
         name: { type: string, examples: ["대한식자재"] }
-    GuideStep:
-      type: object
-      required: [title]
-      properties:
-        title: { type: string, examples: ["사장님용 앱을 열어요"] }
-        message: { type: string, examples: ["배달의민족 사장님 앱 · 로그인"] }
-        imageUrl: { type: [string, "null"], format: uri }
 
     # ───────── 기준 정보 ─────────
     PosSystemCode:
@@ -1046,14 +644,7 @@ components:
     DeliveryAppCode:
       type: string
       description: "`STORE_NOTICE`는 계산대 · SNS용 매장 안내문(항상 포함)"
-      enum: [BAEMIN, COUPANG_EATS, YOGIYO, DDANGYO, STORE_NOTICE]
-    DiscountGuide:
-      type: object
-      required: [steps]
-      properties:
-        steps:
-          type: array
-          items: { $ref: "#/components/schemas/GuideStep" }
+      enum: [BAEMIN, COUPANG_EATS, STORE_NOTICE]
 
     # ───────── 가게 ─────────
     Address:
@@ -1061,7 +652,6 @@ components:
       required: [roadAddress]
       properties:
         roadAddress: { type: string, examples: ["서울 마포구 망원로 00"] }
-        detail: { type: [string, "null"] }
     DayHours:
       type: object
       required: [day, closed]
@@ -1091,36 +681,27 @@ components:
         businessHours: { $ref: "#/components/schemas/BusinessHours" }
     StoreCreate:
       type: object
-      required: [name, category, address]
+      required: [name, category, address, businessHours]
       properties:
         name: { type: string, minLength: 1, maxLength: 40 }
         category: { $ref: "#/components/schemas/StoreCategory" }
         address: { $ref: "#/components/schemas/Address" }
         businessHours: { $ref: "#/components/schemas/BusinessHours" }
-    # ───────── 온보딩 ─────────
-    # ───────── 업로드 ─────────
     # ───────── 판매 데이터 ─────────
     ColumnMapping:
       type: object
       description: "엑셀 열 이름(첫 줄) 매핑"
       properties:
-        date: { type: [string, "null"], examples: ["주문일자"] }
-        menuName: { type: [string, "null"], examples: ["상품명"] }
-        quantity: { type: [string, "null"], examples: ["수량"] }
+        date: { type: string, examples: ["주문일자"] }
+        menuName: { type: string, examples: ["상품명"] }
+        quantity: { type: string, examples: ["수량"] }
     SalesFileDetection:
       type: object
-      description: "1.3 열 확인 · 1.3-1 수량 칸 고르기에 쓰는 판별 결과"
-      required: [headers, columnMapping]
+      description: "1.3 열 확인에 쓰는 판별 결과"
+      required: [columnMapping]
       properties:
         menuCount: { type: integer, examples: [24] }
-        headers:
-          type: array
-          description: "파일 첫 줄(칩으로 표시)"
-          items: { type: string }
-          examples: [["영업일자", "품목명", "판매량", "건수", "금액"]]
-        columnMapping:
-          $ref: "#/components/schemas/ColumnMapping"
-          description: "못 찾은 칸은 null(1.3-1에서 고르게 함)"
+        columnMapping: { $ref: "#/components/schemas/ColumnMapping" }
         preview:
           type: array
           maxItems: 5
@@ -1130,82 +711,29 @@ components:
               date: { type: string, format: date, examples: ["2026-11-01"] }
               menuName: { type: string, examples: ["참치김밥"] }
               quantity: { type: number, examples: [2] }
-    ForecastChange:
-      type: object
-      required: [menu, before, after, unit]
-      properties:
-        date: { type: string, format: date }
-        menu: { $ref: "#/components/schemas/MenuRef" }
-        before: { type: number, examples: [50] }
-        after: { type: number, examples: [52] }
-        unit: { type: string, examples: ["줄"] }
-    SalesImportResult:
-      type: object
-      required: [forecastChanges, newMenus]
-      properties:
-        nextUploadDueDate: { type: [string, "null"], format: date }
-        forecastChanges:
-          type: array
-          items: { $ref: "#/components/schemas/ForecastChange" }
-        orderAmountChange:
-          type: [object, "null"]
-          properties:
-            targetDate: { type: string, format: date }
-            before: { type: integer }
-            after: { type: integer }
-        newMenus:
-          type: array
-          description: "5.9 '처음 보는 메뉴가 N개 있어요' → 5.9-1"
-          items: { $ref: "#/components/schemas/MenuCandidate" }
     SalesImport:
       type: object
       required: [id, status]
-      allOf:
-        # 열 확인 상태에서는 판별 결과를 반드시 제공합니다(null 불가).
-        - if:
-            required: [status]
-            properties:
-              status: { enum: [NEEDS_CONFIRMATION, NEEDS_COLUMN_MAPPING] }
-          then:
-            required: [detection]
-            properties:
-              detection: { $ref: "#/components/schemas/SalesFileDetection" }
-        # 반영 완료 상태에서는 화면에 표시할 결과를 반드시 제공합니다(null 불가).
-        - if:
-            required: [status]
-            properties:
-              status: { const: COMPLETED }
-          then:
-            required: [result]
-            properties:
-              result: { $ref: "#/components/schemas/SalesImportResult" }
+      # 열 확인 상태에서는 판별 결과를 반드시 제공합니다(null 불가).
+      if:
+        required: [status]
+        properties:
+          status: { const: NEEDS_CONFIRMATION }
+      then:
+        required: [detection]
+        properties:
+          detection: { $ref: "#/components/schemas/SalesFileDetection" }
       properties:
         id: { type: string }
         status:
           type: string
-          description: |
-            RECEIVED → PARSING → (NEEDS_CONFIRMATION | NEEDS_COLUMN_MAPPING) → APPLYING → COMPLETED / FAILED
-          enum:
-            [
-              RECEIVED,
-              PARSING,
-              NEEDS_CONFIRMATION,
-              NEEDS_COLUMN_MAPPING,
-              APPLYING,
-              COMPLETED,
-              FAILED,
-            ]
-        fileName: { type: string, examples: ["판매내역_1103-1109.xlsx"] }
+          description: "RECEIVED → PARSING → NEEDS_CONFIRMATION → APPLYING → COMPLETED"
+          enum: [RECEIVED, PARSING, NEEDS_CONFIRMATION, APPLYING, COMPLETED]
         posFormat:
           type: [object, "null"]
           description: "형식을 판별한 뒤부터 채워짐"
           properties:
             posSystem: { $ref: "#/components/schemas/PosSystemCode" }
-            known:
-              {
-                type: boolean,
-                description: "전에 확인한 형식이면 true(열 확인 생략)",
-              }
         detection:
           oneOf:
             - $ref: "#/components/schemas/SalesFileDetection"
@@ -1222,148 +750,7 @@ components:
             description: "파일의 판매 기록 수",
             examples: [1642],
           }
-        overlap:
-          type: [object, "null"]
-          description: "전에 올린 기간과 겹칠 때 — 겹치는 날은 새 파일 기준으로 바뀝니다"
-          properties:
-            from: { type: string, format: date }
-            to: { type: string, format: date }
-        result:
-          oneOf:
-            - $ref: "#/components/schemas/SalesImportResult"
-            - type: "null"
-        error:
-          type: [object, "null"]
-          properties:
-            code:
-              { type: string, enum: [UNSUPPORTED_FILE, NO_ROWS, PARSE_FAILED] }
-    UploadSession:
-      type: object
-      required: [id, status, accessUrl, code, expiresAt]
-      # 파일 도착 후 휴대폰에서 조회할 업로드 작업 ID를 반드시 제공합니다.
-      if:
-        required: [status]
-        properties:
-          status: { const: FILE_RECEIVED }
-      then:
-        required: [salesImportId]
-        properties:
-          salesImportId: { type: string, minLength: 1 }
-      properties:
-        id: { type: string }
-        status: { type: string, enum: [WAITING, FILE_RECEIVED, EXPIRED] }
-        accessUrl: { type: string, examples: ["seoulution.kr/up"] }
-        code: { type: string, pattern: "^[0-9]{6}$", examples: ["482913"] }
-        expiresAt:
-          { type: string, format: date-time, description: "발급 후 10분" }
-        salesImportId: { type: [string, "null"] }
 
-    # ───────── 메뉴 ─────────
-    Menu:
-      type: object
-      required: [id, name, unit]
-      properties:
-        id: { type: string }
-        name: { type: string, examples: ["김밥"] }
-        unit:
-          {
-            type: string,
-            description: "판매 단위",
-            examples: ["줄", "인분", "개"],
-          }
-        price:
-          {
-            type: [integer, "null"],
-            description: "판매가(원). 엑셀 금액 열 · 메뉴판 사진 · 직접 입력",
-            examples: [5000],
-          }
-    MenuBatchSave:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          minItems: 1
-          maxItems: 50
-          items:
-            type: object
-            required: [name, source]
-            properties:
-              name: { type: string, minLength: 1, maxLength: 40 }
-              price: { type: [integer, "null"], minimum: 0, examples: [3500] }
-              unit: { type: string, description: "생략 시 업종·이름으로 추정" }
-              source: { type: string, enum: [MENU_BOARD, MANUAL] }
-    MenuBoardScanResult:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            required: [name, price]
-            properties:
-              name: { type: string, examples: ["김밥"] }
-              price:
-                {
-                  type: [integer, "null"],
-                  description: "못 읽으면 null('가격 못 읽음')",
-                  examples: [3500],
-                }
-    DailySalesRange:
-      type: string
-      description: "하루 보통 판매량 구간 (~10 / 10~30 / 30~60 / 60+)"
-      enum: [UNDER_10, FROM_10_TO_30, FROM_30_TO_60, OVER_60]
-    BaselineSales:
-      type: object
-      required: [items, weekendComparedToWeekday]
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-            required: [menuId, dailyRange]
-            properties:
-              menuId: { type: string }
-              dailyRange: { $ref: "#/components/schemas/DailySalesRange" }
-        weekendComparedToWeekday:
-          type: string
-          description: "주말은 평일보다 — 적어요 / 비슷해요 / 많아요"
-          enum: [LESS, SIMILAR, MORE]
-    MenuCandidate:
-      type: object
-      required: [id, name]
-      properties:
-        id: { type: string }
-        name: { type: string, examples: ["김치김밥"] }
-        firstSeenOn: { type: string, format: date, examples: ["2026-11-07"] }
-        unit: { type: string, examples: ["줄"] }
-        averageDailySales: { type: number, examples: [6] }
-        suggestedMenu:
-          description: "이름이 비슷한 기존 메뉴. 있으면 '이름을 바꾼 거예요'를 미리 골라 둡니다"
-          oneOf:
-            - $ref: "#/components/schemas/MenuRef"
-            - type: "null"
-    MenuResolutionRequest:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          minItems: 1
-          items:
-            type: object
-            required: [candidateId, action]
-            properties:
-              candidateId: { type: string }
-              action: { type: string, enum: [CREATE_NEW, MERGE_INTO] }
-              targetMenuId:
-                { type: string, description: "MERGE_INTO일 때 필수" }
-            if:
-              properties:
-                action: { const: MERGE_INTO }
-            then:
-              required: [targetMenuId]
     # ───────── 레시피 ─────────
     RecipeItem:
       type: object
@@ -1373,20 +760,12 @@ components:
         quantity:
           $ref: "#/components/schemas/Quantity"
           description: "메뉴 1단위(1줄·1인분)당 사용량 · 재료 사용 단위"
-        ingredientStatus:
-          $ref: "#/components/schemas/IngredientStatus"
-          description: "CANDIDATE면 아직 등록 안 된 재료(5.9-2 '새 재료' 배지)"
     Recipe:
       type: object
       required: [menu, unit, items]
       properties:
         menu: { $ref: "#/components/schemas/MenuRef" }
         unit: { type: string, examples: ["줄"] }
-        basedOnMenu:
-          description: "비슷한 메뉴를 바탕으로 만든 경우(5.9-2)"
-          oneOf:
-            - $ref: "#/components/schemas/MenuRef"
-            - type: "null"
         items:
           type: array
           items: { $ref: "#/components/schemas/RecipeItem" }
@@ -1410,18 +789,12 @@ components:
                   properties:
                     ingredientId: { type: string }
                     quantity: { type: number, minimum: 0 }
-              confirm:
-                {
-                  type: boolean,
-                  default: true,
-                  description: "true면 DRAFT → CONFIRMED",
-                }
 
     # ───────── 재료 ─────────
     IngredientStatus:
       type: string
-      description: "CANDIDATE AI 추정 후보(1.4) · CORE 핵심(예측·발주 대상) · LATER 나중에 추가"
-      enum: [CANDIDATE, CORE, LATER]
+      description: "CORE 핵심(예측·발주 대상) · LATER 나중에 추가"
+      enum: [CORE, LATER]
     PurchaseUnit:
       type: object
       required: [label]
@@ -1431,33 +804,15 @@ components:
           type: [number, "null"]
           description: "구매 단위 1개에 든 사용 단위 수량(1판 = 30개). 모르면 null → '단위 확인 필요'"
           examples: [30]
-    PriceSource:
-      type: string
-      description: "RECEIPT 최근 영수증 · MARKET_ESTIMATE KAMIS 시세 변동률 보정 추정 · MANUAL 직접 입력 · NONE 단가 없음(빈칸)"
-      enum: [RECEIPT, MARKET_ESTIMATE, MANUAL, NONE]
     PriceInfo:
       type: object
-      required: [source]
+      required: [unitPrice]
       properties:
         unitPrice:
           {
             type: [integer, "null"],
-            description: "구매 단위 1개당 원",
+            description: "구매 단위 1개당 원. 단가가 없으면 null",
             examples: [8900],
-          }
-        source: { $ref: "#/components/schemas/PriceSource" }
-        sourceDate:
-          {
-            type: [string, "null"],
-            format: date,
-            description: "근거 영수증 날짜",
-            examples: ["2026-11-08"],
-          }
-        marketAdjustmentRate:
-          {
-            type: [number, "null"],
-            description: "MARKET_ESTIMATE일 때 시세 변동률",
-            examples: [0.12],
           }
     IngredientCandidate:
       type: object
@@ -1495,12 +850,6 @@ components:
           oneOf:
             - $ref: "#/components/schemas/SupplierRef"
             - type: "null"
-        remainingDays:
-          {
-            type: [integer, "null"],
-            description: "가장 먼저 끝나는 입고분 기준 남은 일수(2일 이하면 주황)",
-            examples: [9],
-          }
     IngredientList:
       type: object
       required: [items, counts]
@@ -1518,69 +867,6 @@ components:
           type: array
           description: "재료 탭 안내(단가 10% 이상 변동 등)"
           items: { $ref: "#/components/schemas/Alert" }
-    IngredientDetail:
-      allOf:
-        - $ref: "#/components/schemas/IngredientSummary"
-        - type: object
-          properties:
-            shelfLifeDays: { type: [integer, "null"], examples: [14] }
-            usages:
-              type: array
-              description: "쓰이는 메뉴 · 1개당 사용량"
-              items:
-                type: object
-                required: [menu, quantity]
-                properties:
-                  menu: { $ref: "#/components/schemas/MenuRef" }
-                  quantity: { $ref: "#/components/schemas/Quantity" }
-            priceHistory:
-              type: array
-              description: "거래처별 단가 기록(최신순). 같은 재료를 두 곳에서 사면 최근에 산 곳 단가가 기본"
-              items:
-                type: object
-                required: [date, unitPrice]
-                properties:
-                  date: { type: string, format: date }
-                  supplier: { $ref: "#/components/schemas/SupplierRef" }
-                  unitPrice: { type: integer, examples: [8900] }
-            usageVariance:
-              type: [object, "null"]
-              description: "이론 사용량(판매 × 레시피) vs 실제(입고 − 재고)"
-              properties:
-                from: { type: string, format: date }
-                to: { type: string, format: date }
-                theoretical: { $ref: "#/components/schemas/Quantity" }
-                actual: { $ref: "#/components/schemas/Quantity" }
-    IngredientCreate:
-      type: object
-      required: [name]
-      properties:
-        name: { type: string, minLength: 1, maxLength: 40 }
-        status: { type: string, enum: [CORE, LATER], default: CORE }
-        usageUnit: { type: string }
-        purchaseUnit: { $ref: "#/components/schemas/PurchaseUnit" }
-        supplierId: { type: string }
-        unitPrice: { type: integer, minimum: 0 }
-        shelfLifeDays: { type: integer, minimum: 0 }
-    IngredientUpdate:
-      type: object
-      properties:
-        name: { type: string }
-        status: { type: string, enum: [CORE, LATER] }
-        usageUnit: { type: string }
-        purchaseUnit: { $ref: "#/components/schemas/PurchaseUnit" }
-        unitPrice:
-          { type: integer, minimum: 0, description: "직접 고치면 출처 MANUAL" }
-        supplierId: { type: string }
-        shelfLifeDays: { type: integer, minimum: 0 }
-        usages:
-          type: array
-          items:
-            type: object
-            required: [menuId, quantity]
-            properties:
-              menuId: { type: string }
-              quantity: { type: number, minimum: 0 }
 
     # ───────── 거래처 ─────────
     Supplier:
@@ -1596,30 +882,11 @@ components:
           type: string
           description: "ESTIMATED 영수증 날짜로 추정 · CONFIRMED 사장님 확인 · UNKNOWN 영수증이 적어 모름(한 번 물어봄)"
           enum: [ESTIMATED, CONFIRMED, UNKNOWN]
-        orderDeadline: { $ref: "#/components/schemas/LocalTime" }
-        deliveryLeadDays:
-          { type: integer, default: 1, description: "주문 후 도착까지 일수" }
         receiptCount: { type: integer, examples: [3] }
     # ───────── 영수증 ─────────
-    ReceiptScanSummary:
-      type: object
-      properties:
-        supplierCount: { type: integer, examples: [3] }
-        receiptCount: { type: integer, examples: [7] }
-        ingredientCount: { type: integer, examples: [18] }
     ReceiptLine:
       type: object
-      required: [id, rawName, status]
       properties:
-        id: { type: string }
-        rawName:
-          {
-            type: string,
-            description: "영수증 품목명",
-            examples: ["계란 특란 30구"],
-          }
-        rawQuantityText: { type: string, examples: ["× 2"] }
-        amount: { type: [integer, "null"], examples: [15800] }
         ingredient:
           type: [object, "null"]
           properties:
@@ -1631,41 +898,23 @@ components:
           oneOf:
             - $ref: "#/components/schemas/Quantity"
             - type: "null"
-        priceChangeRate:
-          {
-            type: [number, "null"],
-            description: "이전 단가 대비 변동률",
-            examples: [0.13],
-          }
-        status:
-          type: string
-          description: "NEEDS_UNIT '단위를 골라주세요' · NEEDS_CONFIRMATION 같은 재료 질문 대기"
-          enum: [MATCHED, NEEDS_UNIT, NEEDS_CONFIRMATION, IGNORED]
-        unitOptions:
-          type: array
-          items: { type: string }
-          examples: [["봉", "kg", "개"]]
     Receipt:
       type: object
-      required: [id, purchasedOn, lines]
+      required: [purchasedOn, lines]
       properties:
-        id: { type: string }
         purchasedOn: { type: string, format: date }
         lines:
           type: array
           items: { $ref: "#/components/schemas/ReceiptLine" }
     ReceiptSupplierGroup:
       type: object
-      required: [supplierKey, supplier, receipts]
+      required: [supplier, receipts]
       properties:
-        supplierKey:
-          { type: string, description: "기존 거래처 id 또는 새 거래처 임시 키" }
         supplier:
           type: object
           properties:
             id: { type: [string, "null"] }
             name: { type: string, examples: ["망원정육"] }
-            phone: { type: [string, "null"] }
             isNew: { type: boolean }
         receipts:
           type: array
@@ -1690,8 +939,7 @@ components:
         required: [groups]
       properties:
         id: { type: string }
-        status:
-          { type: string, enum: [PROCESSING, NEEDS_REVIEW, CONFIRMED, FAILED] }
+        status: { type: string, enum: [PROCESSING, NEEDS_REVIEW, CONFIRMED] }
         groups:
           type: array
           items: { $ref: "#/components/schemas/ReceiptSupplierGroup" }
@@ -1702,68 +950,22 @@ components:
           type: array
           items: { type: string }
           examples: [["11/8 대한식자재 영수증이 두 번 찍혀서 1장은 뺐어요"]]
-        failedImages:
-          type: array
-          items:
-            type: object
-            properties:
-              uploadId: { type: string }
-              code: { type: string, enum: [UNREADABLE, NOT_A_RECEIPT] }
-        error:
-          type: [object, "null"]
-          properties:
-            code: { type: string, enum: [NO_READABLE_RECEIPT, SCAN_FAILED] }
     ReceiptScanConfirm:
       type: object
       properties:
-        suppliers:
-          type: array
-          description: "새 거래처 확인('맞아요') · 이름/번호 수정"
-          items:
-            type: object
-            required: [supplierKey]
-            properties:
-              supplierKey: { type: string }
-              confirmed: { type: boolean, default: true }
-              name: { type: string }
-              phone: { type: string }
         answers:
           type: array
+          description: "같은 재료인지 묻는 질문의 답('달라요' / '같아요')"
           items:
             type: object
             required: [questionId, answer]
             properties:
               questionId: { type: string }
               answer: { type: string, enum: [SAME, DIFFERENT] }
-        lines:
-          type: array
-          description: "줄 단위 수정(단위 고르기 · 재료 연결 · 제외)"
-          items:
-            type: object
-            required: [lineId]
-            properties:
-              lineId: { type: string }
-              unit: { type: string, examples: ["봉"] }
-              ingredientId: { type: string }
-              ignore: { type: boolean }
-    ReceiptScanConfirmResult:
-      type: object
-      required: [summary, suppliers]
-      properties:
-        summary: { $ref: "#/components/schemas/ReceiptScanSummary" }
-        suppliers:
-          type: array
-          description: "1.5-1 거래처별 요약(대한식자재 3장 · 재료 9개)"
-          items:
-            type: object
-            properties:
-              name: { type: string }
-              receiptCount: { type: integer }
-              ingredientCount: { type: integer }
     # ───────── 홈 · 날씨 · 행사 ─────────
     HomeView:
       type: string
-      description: "TOMORROW 전날 밤(내일 할 일 · 발주) · TODAY 당일 아침(오늘 미리 만들어둘 양)"
+      description: "TOMORROW 전날 밤(준비량 · 발주) · TODAY 당일 아침(오늘 미리 만들어둘 양). 두 화면이 바뀌는 시각 기준은 미정"
       enum: [TOMORROW, TODAY]
     WeatherCondition:
       type: string
@@ -1810,17 +1012,25 @@ components:
       properties:
         type:
           type: string
-          description: "2.5 엑셀 늦어짐 · 2.6 데이터 부족 · 2.2 밤사이 변경"
-          enum: [SALES_DATA_STALE, INSUFFICIENT_DATA, OVERNIGHT_CHANGE]
-        title: { type: string, examples: ["11/9까지 기록으로 예측하고 있어요"] }
+          description: "FIRST_FORECAST 2.0-1 첫 예측 준비됨(X로 닫은 것은 프론트가 기억) · OVERNIGHT_CHANGE 2.2 밤사이 변경 · EVENT_TODAY 2.9 오늘 행사와 붐비는 시간 · DELIVERY_EXPECTED 2.9 어젯밤 발주 입고 예정"
+          enum: [FIRST_FORECAST, OVERNIGHT_CHANGE, EVENT_TODAY, DELIVERY_EXPECTED]
+        title: { type: string, examples: ["오늘 근처 축제 · 12:00 ~ 18:00"] }
+        message:
+          {
+            type: [string, "null"],
+            examples: ["13~16시가 가장 붐벼요 · 12시 전에 김밥 준비를 끝내두세요"],
+          }
     OrderPlanSummary:
       type: object
-      required: [supplierCount, estimatedTotal, approximate]
+      required: [supplierCount, estimatedTotal]
       properties:
-        deadline: { $ref: "#/components/schemas/LocalTime" }
         supplierCount: { type: integer, examples: [3] }
-        estimatedTotal: { type: integer }
-        approximate: { type: boolean }
+        estimatedTotal:
+          {
+            type: [integer, "null"],
+            description: "단가를 아는 재료가 없으면 null(영수증을 건너뛴 직후 — 금액을 비워 둠)",
+            examples: [400000],
+          }
     Home:
       type: object
       required:
@@ -1835,16 +1045,15 @@ components:
             weather: { $ref: "#/components/schemas/WeatherSummary" }
             events:
               type: array
-              description: "반경 3km 행사. 0건이면 행사 줄 자체를 숨깁니다(2.7)"
+              description: "반경 3km 행사(2.7-1 아코디언). 0건이면 행사 줄 자체를 숨깁니다"
               items: { $ref: "#/components/schemas/EventSummary" }
         banners:
           type: array
           items: { $ref: "#/components/schemas/HomeBanner" }
         forecast:
           type: object
-          required: [display, items, totalMenuCount]
+          required: [items, totalMenuCount]
           properties:
-            display: { $ref: "#/components/schemas/ForecastDisplay" }
             items:
               type: array
               description: "홈에는 상위 3개 메뉴만(스크롤 없이 한 화면)"
@@ -1859,34 +1068,16 @@ components:
           type: array
           description: "주의할 것"
           items: { $ref: "#/components/schemas/Alert" }
-        popup:
-          description: "그날 앱을 처음 열 때 한 번 띄울 팝업(3.9). 여러 개면 한 팝업에 모음"
-          oneOf:
-            - $ref: "#/components/schemas/Alert"
-            - type: "null"
 
     # ───────── 예측 ─────────
-    ForecastDisplay:
-      type: string
-      description: "POINT 한 숫자 · RANGE 범위(2.5 엑셀 늦어짐)"
-      enum: [POINT, RANGE]
-    DataQuality:
-      type: string
-      description: "SUFFICIENT 4주 이상 · LIMITED 4주 미만('계산 중', 2.6) · ESTIMATED 평소 판매량 기반('추정 중', 1.2-2)"
-      enum: [SUFFICIENT, LIMITED, ESTIMATED]
     ForecastItem:
       type: object
-      required: [menu, unit, recommended, planned, dataQuality]
+      required: [menu, unit, recommended, planned]
       properties:
         menu: { $ref: "#/components/schemas/MenuRef" }
         unit: { type: string, examples: ["줄"] }
         recommended:
           { type: number, description: "추천 준비량", examples: [50] }
-        range:
-          description: "display=RANGE일 때"
-          oneOf:
-            - $ref: "#/components/schemas/QuantityRange"
-            - type: "null"
         planned:
           {
             type: number,
@@ -1895,18 +1086,23 @@ components:
           }
         comparison:
           type: object
+          description: "평소(지난 4주 같은 요일 평균) 대비"
           properties:
-            basis: { type: string, enum: [USUAL, LAST_WEEK] }
             direction: { type: string, enum: [MORE, LESS, SIMILAR] }
             diff: { type: number, examples: [-8] }
-            rate: { type: number, examples: [-0.14] }
         summaryText:
           {
             type: string,
             description: "한 줄 근거",
-            examples: ["지난 4주 수요일 평균 54줄 · 비 예보 −15%"],
+            examples: ["지난 4주 토요일 평균 58줄 · 행사 +20%"],
           }
-        dataQuality: { $ref: "#/components/schemas/DataQuality" }
+        eventDiff:
+          {
+            type: number,
+            default: 0,
+            description: "근처 행사 때문에 더한 양(2.9 '행사 +12'). 0이면 배지 없음",
+            examples: [12],
+          }
         previousRecommended:
           {
             type: [number, "null"],
@@ -1915,61 +1111,13 @@ components:
           }
         produced:
           { type: [number, "null"], description: "TODAY 뷰 — 지금까지 만든 양" }
-    Forecast:
-      type: object
-      required: [date, display, items]
-      properties:
-        date: { type: string, format: date }
-        display: { $ref: "#/components/schemas/ForecastDisplay" }
-        items:
-          type: array
-          items: { $ref: "#/components/schemas/ForecastItem" }
-    ForecastStep:
-      type: object
-      required: [type, text, applied]
-      properties:
-        type:
-          {
-            type: string,
-            enum: [BASE_AVERAGE, WEATHER, EVENT, BUFFER, TREND, MANUAL],
-          }
-        text: { type: string, examples: ["비 예보(오후 2시~) −15%"] }
-        detailText: { type: [string, "null"], examples: ["품절 2회 반영"] }
-        rate: { type: [number, "null"], examples: [-0.15] }
-        valueAfter:
-          {
-            type: [number, "null"],
-            description: "이 단계까지 적용한 값",
-            examples: [46],
-          }
-        applied: { type: boolean, description: "false면 '없음'으로 표시" }
-    ForecastExplanation:
-      type: object
-      required: [date, menu, unit, steps, recommended, planned]
-      properties:
-        date: { type: string, format: date }
-        menu: { $ref: "#/components/schemas/MenuRef" }
-        unit: { type: string }
-        steps:
-          type: array
-          items: { $ref: "#/components/schemas/ForecastStep" }
-        recommended: { type: number, examples: [50] }
-        planned: { type: number, examples: [50] }
-        reference:
-          type: [object, "null"]
-          properties:
-            text: { type: string, examples: ["지난주 수요일 실제 판매"] }
-            value: { type: number, examples: [47] }
-        affectedIngredients:
-          type: array
-          items: { $ref: "#/components/schemas/IngredientRef" }
     ForecastAdjustmentResult:
       type: object
       required: [item]
       properties:
         item: { $ref: "#/components/schemas/ForecastItem" }
         order:
-          description: "다시 계산한 발주 요약(홈 발주 카드). 발주 마감 후면 null"
+          description: "다시 계산한 발주 요약(홈 발주 카드). 오늘 주문할 거래처가 없으면 null"
           oneOf:
             - $ref: "#/components/schemas/OrderPlanSummary"
             - type: "null"
@@ -1982,25 +1130,41 @@ components:
         ingredient: { $ref: "#/components/schemas/IngredientRef" }
         quantity: { $ref: "#/components/schemas/Quantity" }
         price: { $ref: "#/components/schemas/PriceInfo" }
+        eventDiff:
+          {
+            type: number,
+            default: 0,
+            description: "근처 행사 때문에 더한 양, quantity와 같은 단위(2.8 '행사 +1판'). 행사가 있는데 0이면 '평소와 같음'",
+            examples: [1],
+          }
+        stock:
+          description: "지금 남은 재고 추정(2.8 '남은 약 1판 반'). value가 0이면 '남은 없음', 모르면 null"
+          oneOf:
+            - $ref: "#/components/schemas/Quantity"
+            - type: "null"
     OrderPlanSupplier:
       type: object
-      required: [supplier, deadline, lines]
+      required: [supplier, lines]
       properties:
         supplier: { $ref: "#/components/schemas/SupplierRef" }
-        deadline: { $ref: "#/components/schemas/LocalTime" }
-        closed: { type: boolean, description: "마감 시각 지남" }
-        purchaseOrderId: { type: [string, "null"] }
         lines:
           type: array
           items: { $ref: "#/components/schemas/OrderLine" }
     OrderPlan:
       type: object
-      required: [targetDate, approximate, suppliers]
+      required: [targetDate, suppliers]
       properties:
         targetDate: { type: string, format: date, examples: ["2026-11-11"] }
-        status: { type: string, enum: [OPEN, PARTIALLY_CLOSED, CLOSED] }
-        approximate:
-          { type: boolean, description: "추정 단가가 섞이면 true('약')" }
+        events:
+          type: array
+          description: "발주량에 반영한 근처 행사(2.8 · 3.8 행사 안내). 없으면 빈 배열"
+          items: { $ref: "#/components/schemas/EventSummary" }
+        usualTotal:
+          {
+            type: [integer, "null"],
+            description: "평소 같은 요일 발주 금액. '평소 토요일보다 약 64,000원 많아요'는 프론트가 합계와의 차이로 계산",
+            examples: [388000],
+          }
         suppliers:
           type: array
           items: { $ref: "#/components/schemas/OrderPlanSupplier" }
@@ -2019,7 +1183,7 @@ components:
               supplierId: { type: string }
               lines:
                 type: array
-                description: "3.0에서 +/−로 고친 최종 수량"
+                description: "2.8에서 +/−로 고친 최종 수량"
                 items:
                   type: object
                   required: [ingredientId, quantity]
@@ -2031,7 +1195,7 @@ components:
       enum: [SMS, KAKAOTALK, COPY]
     PurchaseOrder:
       type: object
-      required: [id, targetDate, supplier, lines, messageText]
+      required: [id, targetDate, supplier, messageText]
       properties:
         id: { type: string }
         targetDate: { type: string, format: date }
@@ -2047,14 +1211,6 @@ components:
                 type: [string, "null"],
                 examples: ["11/8 영수증에서 읽었어요. 다음부터는 묻지 않아요"],
               }
-        lines:
-          type: array
-          description: "3.8 '복사해서 고치기'에 쓰는 재료 · 수량"
-          items:
-            type: object
-            properties:
-              ingredient: { $ref: "#/components/schemas/IngredientRef" }
-              quantity: { $ref: "#/components/schemas/Quantity" }
         messageText:
           type: string
           examples:
@@ -2069,12 +1225,6 @@ components:
         targetDate: { type: string, format: date }
         supplier: { $ref: "#/components/schemas/SupplierRef" }
         totalAmount: { type: [integer, "null"], examples: [35200] }
-        itemsText:
-          { type: string, examples: ["계란 2판 · 김 1속 · 대파 2단"] }
-        lastSentVia:
-          oneOf:
-            - $ref: "#/components/schemas/SendChannel"
-            - type: "null"
     # ───────── 할인 ─────────
     DiscountValue:
       type: object
@@ -2099,26 +1249,19 @@ components:
         quantity: { type: number, examples: [5] }
         reasonText: { type: string, examples: ["어묵이 많이 들어가요"] }
         expectedSavings: { type: integer }
-        createdDiscountId:
-          {
-            type: [string, "null"],
-            description: "이미 할인을 만들었으면 그 id",
-          }
     SurplusStockItem:
       type: object
       required: [ingredient, quantity]
       properties:
         ingredient: { $ref: "#/components/schemas/IngredientRef" }
         quantity: { $ref: "#/components/schemas/Quantity" }
-        expiresOn: { type: [string, "null"], format: date }
         wasteCost: { type: [integer, "null"], examples: [9000] }
         mitigation:
           { type: string, enum: [DISCOUNT_RECOMMENDED, ORDER_REDUCED, NONE] }
     DiscountRecommendations:
       type: object
-      required: [date, baseTime, recommendations, surplusStock, today]
+      required: [date, baseTime, recommendations, surplusStock]
       properties:
-        deliveryApps: { $ref: "#/components/schemas/DeliveryAppSettings" }
         date: { type: string, format: date }
         baseTime: { $ref: "#/components/schemas/LocalTime" }
         recommendations:
@@ -2127,47 +1270,20 @@ components:
         surplusStock:
           type: array
           items: { $ref: "#/components/schemas/SurplusStockItem" }
-        today:
-          type: object
-          properties:
-            discountCount: { type: integer, examples: [2] }
-            unregisteredApps:
-              type: array
-              items: { $ref: "#/components/schemas/DeliveryAppCode" }
-              examples: [[COUPANG_EATS]]
     DiscountCreate:
       type: object
       required: [menuId, discount, startTime, quantity]
       properties:
         recommendationId: { type: string }
-        date: { type: string, format: date, description: "생략 시 오늘" }
         menuId: { type: string }
         discount: { $ref: "#/components/schemas/DiscountValue" }
         startTime: { $ref: "#/components/schemas/LocalTime" }
-        endTime:
-          description: "null = 마감까지"
-          oneOf:
-            - $ref: "#/components/schemas/LocalTime"
-            - type: "null"
         quantity: { type: number, minimum: 1 }
-        promoText: { type: string, description: "생략 시 서버가 생성" }
     DiscountChannel:
       type: object
       required: [app]
       properties:
         app: { $ref: "#/components/schemas/DeliveryAppCode" }
-        registeredAt:
-          {
-            type: [string, "null"],
-            format: date-time,
-            description: "'등록했어요'를 누른 시각. null이면 아직 안 함",
-          }
-        remindAt:
-          {
-            type: [string, "null"],
-            format: date-time,
-            description: "'아직요' 후 다시 알릴 시각",
-          }
         launchUrl: { type: [string, "null"] }
         supportsPaste: { type: boolean }
     Discount:
@@ -2183,7 +1299,6 @@ components:
           startTime,
           quantity,
           channels,
-          status,
         ]
       properties:
         id: { type: string }
@@ -2194,10 +1309,6 @@ components:
         originalPrice: { type: integer }
         discountedPrice: { type: integer }
         startTime: { $ref: "#/components/schemas/LocalTime" }
-        endTime:
-          oneOf:
-            - $ref: "#/components/schemas/LocalTime"
-            - type: "null"
         quantity: { type: number }
         wasteCostAvoided:
           {
@@ -2211,24 +1322,12 @@ components:
             description: "할인으로 덜 받는 금액",
             examples: [2500],
           }
-        recoveredAmount:
-          {
-            type: [integer, "null"],
-            description: "할인 회수 금액(판매 엑셀 반영 후 계산)",
-            examples: [4200],
-          }
         promoText:
           { type: string, examples: ["갓 만든 떡볶이, 마감 전에 할인해요"] }
         channels:
           type: array
+          description: "앱 목록과 순서는 서버 고정값입니다"
           items: { $ref: "#/components/schemas/DiscountChannel" }
-        status: { type: string, enum: [ACTIVE, ENDED, CANCELLED] }
-        turnOffReminderAt:
-          {
-            type: [string, "null"],
-            format: date-time,
-            description: "마감 후 할인 끄기 알림",
-          }
     DiscountHistory:
       type: object
       required: [items]
@@ -2237,25 +1336,6 @@ components:
           type: array
           description: "최신순. 날짜별 묶음은 프론트가 `date`로 만듭니다"
           items: { $ref: "#/components/schemas/Discount" }
-        nextCursor: { type: [string, "null"] }
-    DeliveryAppSettings:
-      type: object
-      required: [configured, enabledApps]
-      properties:
-        configured:
-          {
-            type: boolean,
-            readOnly: true,
-            description: "false면 할인 탭 첫 진입 때 4.4 자동 표시",
-          }
-        enabledApps:
-          type: array
-          items: { $ref: "#/components/schemas/DeliveryAppCode" }
-        primaryApp:
-          description: "문구 탭에서 먼저 보여줄 앱"
-          oneOf:
-            - $ref: "#/components/schemas/DeliveryAppCode"
-            - type: "null"
     # ───────── 알림 ─────────
     Alert:
       type: object
@@ -2264,48 +1344,18 @@ components:
         id: { type: string }
         type:
           type: string
-          enum:
-            [
-              EXPIRY_IMMINENT,
-              SURPLUS_EXPECTED,
-              PRICE_CHANGED,
-              DISCOUNT_NOT_REGISTERED,
-              SALES_FILE_OVERDUE,
-              UNIT_UNCONFIRMED,
-            ]
-        severity: { type: string, enum: [INFO, WARNING] }
-        title: { type: string, examples: ["어묵이 내일까지예요"] }
+          enum: [EXPIRY_IMMINENT, PRICE_CHANGED]
+        title:
+          { type: string, examples: ["어묵 오늘까지 · 할인 추천이 있어요"] }
         message:
           {
             type: string,
-            examples:
-              ["6봉 남았어요(11/5 입고분). 오늘 쓰거나 할인으로 팔아 보세요"],
+            examples: ["계란 단가가 7,900원 → 8,900원으로 올랐어요 (+13%)"],
           }
-        items:
-          type: array
-          items:
-            type: object
-            properties:
-              ingredient: { $ref: "#/components/schemas/IngredientRef" }
-              quantity: { $ref: "#/components/schemas/Quantity" }
-              receivedOn: { type: [string, "null"], format: date }
-              expiresOn: { type: [string, "null"], format: date }
         actions:
           type: array
           items:
             type: object
             required: [type]
             properties:
-              type:
-                {
-                  type: string,
-                  enum:
-                    [
-                      OPEN_DISCOUNTS,
-                      OPEN_INGREDIENT,
-                      OPEN_SUPPLIER_PRICES,
-                      OPEN_DISCOUNT_HISTORY,
-                      UPLOAD_SALES_FILE,
-                    ],
-                }
-              targetId: { type: [string, "null"] }
+              type: { type: string, enum: [OPEN_DISCOUNTS] }

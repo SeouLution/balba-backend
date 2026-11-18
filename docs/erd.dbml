@@ -1,0 +1,189 @@
+Table store {
+  id text [pk]
+  name text [not null]
+  category text [not null, note: 'BUNSIK | KOREAN_MEAL | GUKBAP | BANCHAN | BAKERY | OTHER']
+  road_address text [not null]
+  latitude float [note: '주소 지오코딩 결과, 행사 거리 계산 · 기상청 격자 변환용']
+  longitude float
+  business_hours json [not null, note: 'DayHours 7개 그대로']
+  push_token text
+  generation_status text [not null, default: 'GENERATING', note: 'GENERATING | READY']
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table menu {
+  id text [pk]
+  store_id text [not null, ref: > store.id]
+  name text [not null]
+  unit text [not null, note: '줄, 인분']
+  price int [note: '엑셀 금액 ÷ 수량']
+
+  indexes {
+    (store_id, name) [unique]
+  }
+}
+
+Table ingredient {
+  id text [pk]
+  store_id text [not null, ref: > store.id]
+  name text [not null]
+  status text [not null, default: 'LATER', note: 'CORE | LATER']
+  usage_unit text [note: '개']
+  purchase_unit text [note: '판']
+  content_quantity numeric [note: '구매 단위 1개에 든 사용 단위 수량 (1판 = 30개)']
+  shelf_life_days int [note: '재료별 기본 유통기한']
+  tags json [not null, default: '[]', note: 'RECOMMENDED | SHORT_SHELF_LIFE | EXPENSIVE 배열']
+
+  indexes {
+    (store_id, name) [unique]
+  }
+}
+
+Table recipe_item {
+  menu_id text [not null, ref: > menu.id]
+  ingredient_id text [not null, ref: > ingredient.id]
+  quantity numeric [not null, note: '메뉴 1단위당 사용량 (재료 사용 단위)']
+
+  indexes {
+    (menu_id, ingredient_id) [pk]
+  }
+}
+
+Table sales_import {
+  id text [pk]
+  store_id text [not null, ref: > store.id]
+  status text [not null, default: 'RECEIVED', note: 'RECEIVED | PARSING | NEEDS_CONFIRMATION | APPLYING | COMPLETED']
+  file_path text [not null, note: 'confirm 이후 반영에 필요']
+  pos_system text [note: 'TOSS_POS | OKPOS | BAEMIN_POS | OTHER']
+  detection json [note: 'menuCount, columnMapping(+금액 열), preview']
+  period_from date
+  period_to date
+  record_count int
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table daily_sales {
+  menu_id text [not null, ref: > menu.id]
+  sold_on date [not null]
+  quantity numeric [not null]
+
+  indexes {
+    (menu_id, sold_on) [pk]
+  }
+}
+
+Table supplier {
+  id text [pk]
+  store_id text [not null, ref: > store.id]
+  name text [not null]
+  phone text
+  phone_read_on date [note: '전화번호를 읽은 영수증 날짜 (11/8 영수증에서 읽었어요)']
+  phone_confirmed bool [not null, default: false]
+  order_days json [not null, default: '[]', note: 'DayOfWeek 배열']
+  order_days_status text [not null, default: 'UNKNOWN', note: 'ESTIMATED | CONFIRMED | UNKNOWN']
+
+  indexes {
+    (store_id, name) [unique]
+  }
+}
+
+Table receipt_scan {
+  id text [pk]
+  store_id text [not null, ref: > store.id]
+  status text [not null, default: 'PROCESSING', note: 'PROCESSING | NEEDS_REVIEW | CONFIRMED']
+  result json [note: 'groups(+단가, 전화번호), questions, removedDuplicateTexts']
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table receipt_line {
+  id int [pk, increment]
+  supplier_id text [not null, ref: > supplier.id]
+  purchased_on date [not null]
+  ingredient_id text [not null, ref: > ingredient.id]
+  product_name text [not null, note: '영수증에 적힌 품명 (계란 특란 30구). 발주 문구 · 같은 재료 판별용']
+  quantity numeric [not null, note: '입고량 (구매 단위)']
+  unit_price int [note: '구매 단위당 원']
+
+  Note: '영수증 1장 = 같은 supplier_id · purchased_on 묶음. 재료의 현재 단가 · 거래처는 purchased_on이 가장 늦은 줄. 남은 재고의 입고는 이 테이블만 계산'
+}
+
+Table forecast {
+  menu_id text [not null, ref: > menu.id]
+  target_date date [not null]
+  recommended numeric [not null]
+  baseline numeric [not null, note: '지난 4주 같은 요일 평균']
+  event_diff numeric [not null, default: 0]
+  summary_text text
+  previous_recommended numeric [note: '전날 밤 추천량과 달라졌을 때의 이전 값']
+  adjusted numeric [note: '사장님이 고친 값']
+  produced numeric [note: '만든 양']
+
+  indexes {
+    (menu_id, target_date) [pk]
+  }
+}
+
+Table weather {
+  store_id text [not null, ref: > store.id]
+  target_date date [not null]
+  temperature_c numeric [not null]
+  condition text [not null, note: 'CLEAR | PARTLY_CLOUDY | CLOUDY | RAIN | SNOW | RAIN_SNOW | SHOWER']
+  summary_text text [not null]
+  change_text text [note: '밤사이 바뀌었으면 채움']
+
+  indexes {
+    (store_id, target_date) [pk]
+  }
+}
+
+Table event {
+  id text [pk, note: '서울 행사 API의 id']
+  name text [not null]
+  place text
+  latitude float [not null]
+  longitude float [not null]
+  start_at timestamptz [not null]
+  end_at timestamptz [not null]
+  crowd_level text [note: 'NORMAL | BUSY | VERY_BUSY']
+  expected_visitors int
+  peak_from time
+  peak_to time
+  detail_url text
+}
+
+Table purchase_order {
+  id text [pk]
+  supplier_id text [not null, ref: > supplier.id]
+  target_date date [not null]
+  message_text text [not null]
+  total_amount int [note: '생성 시점 금액']
+  sent_channel text [note: 'SMS | KAKAOTALK | COPY']
+  sent_at timestamptz
+  created_at timestamptz [not null, default: `now()`]
+}
+
+Table purchase_order_line {
+  purchase_order_id text [not null, ref: > purchase_order.id]
+  ingredient_id text [not null, ref: > ingredient.id]
+  quantity numeric [not null, note: '구매 단위']
+
+  indexes {
+    (purchase_order_id, ingredient_id) [pk]
+  }
+
+  Note: '입고로 계산하지 않음. 입고 예정 안내 문구용'
+}
+
+Table discount {
+  id text [pk]
+  menu_id text [not null, ref: > menu.id]
+  discount_type text [not null, note: 'PERCENT | AMOUNT']
+  discount_value numeric [not null]
+  start_time time [not null]
+  quantity numeric [not null]
+  original_price int [not null]
+  waste_cost_avoided int
+  revenue_reduction int
+  promo_text text
+  created_at timestamptz [not null, default: `now()`, note: '할인 날짜는 이 값의 한국 날짜']
+}
