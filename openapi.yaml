@@ -1028,7 +1028,7 @@ components:
         estimatedTotal:
           {
             type: [integer, "null"],
-            description: "단가를 아는 재료가 없으면 null(영수증을 건너뛴 직후 — 금액을 비워 둠)",
+            description: "단가를 아는 재료가 없으면 null(금액을 비워 둠). 영수증을 건너뛰어 거래처가 없으면 order 자체가 null",
             examples: [400000],
           }
     Home:
