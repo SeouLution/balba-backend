@@ -8,6 +8,7 @@ Table store {
   business_hours json [not null, note: 'DayHours 7개 그대로']
   push_token text
   generation_status text [not null, default: 'GENERATING', note: 'GENERATING | READY']
+  first_forecast_at timestamptz [note: '첫 예측이 만들어진 시각. FIRST_FORECAST 배너를 그날 홈에만 띄움']
   created_at timestamptz [not null, default: `now()`]
 }
 
@@ -91,7 +92,8 @@ Table receipt_scan {
   id text [pk]
   store_id text [not null, ref: > store.id]
   status text [not null, default: 'PROCESSING', note: 'PROCESSING | NEEDS_REVIEW | CONFIRMED']
-  result json [note: 'groups(+단가, 전화번호), questions, removedDuplicateTexts']
+  images json [not null, note: '올린 사진의 저장 위치 배열(올린 순서). 읽기 작업이 재시작돼도 다시 읽을 수 있게 함']
+  result json [note: 'groups(+단가, 전화번호), questions, removedDuplicateTexts, 확정 답변']
   created_at timestamptz [not null, default: `now()`]
 }
 
@@ -186,4 +188,19 @@ Table discount {
   revenue_reduction int
   promo_text text
   created_at timestamptz [not null, default: `now()`, note: '할인 날짜는 이 값의 한국 날짜']
+}
+
+Table background_job {
+  id text [pk]
+  kind text [not null, note: 'GEOCODE_STORE | PARSE_SALES | APPLY_SALES | GENERATE_RECIPES | SCAN_RECEIPTS | REFRESH_CONTEXT | GENERATE_FORECAST | SEND_PUSH']
+  payload json [not null, note: '대상 store_id · import_id · scan_id · target_date 등']
+  dedupe_key text [not null, unique, note: '같은 작업이 두 번 등록되지 않게 하는 키']
+  state text [not null, default: 'READY', note: 'READY | RUNNING | SUCCEEDED | DEAD']
+  attempts int [not null, default: 0]
+  available_at timestamptz [not null, default: `now()`, note: '이 시각 이후에 실행. 재시도 지연에 사용']
+  last_error text
+  created_at timestamptz [not null, default: `now()`]
+  finished_at timestamptz
+
+  Note: '엑셀 반영 · 영수증 읽기 · 예측 · 푸시 같은 비동기 작업. 서버가 재시작돼도 끝나지 않은 작업을 이어서 실행'
 }
