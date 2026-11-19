@@ -14,18 +14,7 @@
 
 - `storeId` (path): {examples: [st_8f2k1], type: string} — 필수
 
-요청 본문: `multipart/form-data`, 필수, 인라인 타입 (아래).
-
-```yaml
-type: object
-required:
-- file
-properties:
-  file:
-    type: string
-    contentMediaType: application/octet-stream
-    description: .xlsx · .xls · .csv
-```
+요청 본문: `multipart/form-data`, 필수, [OpenAPI](../../../openapi.yaml)의 `createSalesImport → requestBody → multipart/form-data`.
 
 | 성공 상태 | 응답 |
 |---|---|

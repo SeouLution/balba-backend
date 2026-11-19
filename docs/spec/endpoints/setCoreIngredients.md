@@ -14,19 +14,7 @@
 
 - `storeId` (path): {examples: [st_8f2k1], type: string} — 필수
 
-요청 본문: `application/json`, 필수, 인라인 타입 (아래).
-
-```yaml
-type: object
-required:
-- ingredientIds
-properties:
-  ingredientIds:
-    type: array
-    minItems: 1
-    items:
-      type: string
-```
+요청 본문: `application/json`, 필수, [OpenAPI](../../../openapi.yaml)의 `setCoreIngredients → requestBody → application/json`.
 
 | 성공 상태 | 응답 |
 |---|---|

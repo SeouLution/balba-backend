@@ -14,20 +14,7 @@
 
 - `storeId` (path): {examples: [st_8f2k1], type: string} — 필수
 
-요청 본문: `multipart/form-data`, 필수, 인라인 타입 (아래).
-
-```yaml
-type: object
-required:
-- images
-properties:
-  images:
-    type: array
-    maxItems: 30
-    items:
-      type: string
-      contentMediaType: image/jpeg
-```
+요청 본문: `multipart/form-data`, 필수, [OpenAPI](../../../openapi.yaml)의 `createReceiptScan → requestBody → multipart/form-data`.
 
 | 성공 상태 | 응답 |
 |---|---|
