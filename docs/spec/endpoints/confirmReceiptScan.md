@@ -30,11 +30,11 @@ receipts / `ConfirmReceiptScan.execute(StoreContext, ScanId, answers:List<{quest
 1. body 생략이나 `{}`는 `answers=[]`로 본다. questionId 중복은 422. store를 잠그고 scan 소속을 확인한다(아니면 404).
 2. PROCESSING은 422, SCAN_RECEIPTS가 DEAD면 500. 이미 CONFIRMED면: body가 없거나 저장된 답과 같으면 204, 다른 답이면 422.
 3. NEEDS_REVIEW의 모든 질문에 하나씩 답이 있어야 한다. 모르는 questionId나 빠진 답은 422. 질문이 없으면 body 없이 진행한다.
-4. 거래처를 이름으로 찾거나 만든다. 확인된 전화번호가 없는 거래처에만 영수증 번호와 날짜를 넣는다.
-5. 재료를 연결하거나 만든다(SAME → 후보 재료, DIFFERENT·신규 → 새 LATER 재료). 재료의 빈 구매 단위·환산 비율을 영수증 값으로 채운다. 구매 단위가 재료와 다른 줄은 빼고 안내에 더한다.
+4. 가게 잠금 안에서 사진별 중복을 다시 판정한다(D22). 중복 사진은 안내만 남기고, 남은 사진에 대해서만 거래처를 이름으로 찾거나 만든다. 확인된 전화번호가 없는 거래처에만 영수증 번호와 날짜를 넣는다.
+5. 재료를 연결하거나 만든다(SAME → 후보 재료, DIFFERENT·신규 → 새 LATER 재료). 재료의 빈 구매 단위·환산 비율을 영수증 값으로 채운다. 단위명은 같고 포장량이 충돌하는 경우는 미정(U01)이다. 구매 단위가 재료와 다른 줄은 빼고 안내에 더한다.
 6. 줄마다 receipt_line(supplier_id, purchased_on, ingredient_id, product_name, quantity, unit_price)을 만든다. 입고는 여기서만 생긴다.
 7. 확인된 요일이 없는 거래처의 주문 요일을 추정한다(D15).
-8. 답과 새로 만든 id를 `receipt_scan.result`에 저장하고 `status=CONFIRMED`로 바꾼다.
+8. 사진별 비교값·반영 여부, 최종 그룹·안내, 답과 새로 만든 id를 `receipt_scan.result`에 저장하고 `status=CONFIRMED`로 바꾼다.
 9. 한 번에 commit하고 204. 모든 영수증이 중복이거나 읽지 못한 것이어서 입고가 0건이어도 CONFIRMED다.
 
 ## 원자성·실패

@@ -19,7 +19,7 @@ ERD의 text ID, composite PK, 날짜/timestamptz, nullable을 그대로 따른�
 | sales_import | sales | `file_path`는 내부 저장 위치. `detection`에 열 매핑(금액 열 포함)과 미리보기 |
 | daily_sales | sales | `(menu_id,sold_on)` 칸 교체. 더하지 않음 |
 | supplier | suppliers | `(store_id,name)` unique. 확인된 전화·요일은 영수증이 덮지 않음 |
-| receipt_scan | receipts | `images`에 사진 위치 배열. `result`에 읽은 결과·질문·확정 답변 |
+| receipt_scan | receipts | `images`에 사진 위치 배열. `result`에 사진별 비교값·반영 여부, 검토 결과·질문·확정 답변과 최종 안내 |
 | receipt_line | receipts | 확정한 scan에서만 생김. 영수증 1장 = 같은 `supplier_id`·`purchased_on` 묶음(ERD) |
 | forecast | forecasting | 작업은 `adjusted`·`produced`를 쓰지 않음 |
 | weather | forecasting | `(store_id,target_date)` 한 행을 덮어씀 |
@@ -27,7 +27,7 @@ ERD의 text ID, composite PK, 날짜/timestamptz, nullable을 그대로 따른�
 | purchase_order | ordering | `message_text`, `total_amount`는 생성 시점 값으로 고정 |
 | purchase_order_line | ordering | 구매 단위 수량. 입고로 세지 않음 |
 | discount | discounts | `original_price`, `waste_cost_avoided`, `revenue_reduction`, `promo_text`는 생성 시점 값 |
-| background_job | infrastructure/jobs | `dedupe_key` unique |
+| background_job | infrastructure/jobs | `dedupe_key` unique. slot 예측 결과는 [작업 payload 계약](../02-boundary-contracts.md)대로 같은 행에 보관 |
 
 2026-11-19에 ERD에 추가한 것은 `background_job` 테이블, `store.first_forecast_at`, `receipt_scan.images` 세 가지다. 응답에 필요하지만 저장하지 않는 값은 조회할 때 계산한다: 할인가(`original_price`와 할인 값으로 계산), 거래처 영수증 수(`receipt_line`의 서로 다른 `purchased_on` 수), 발주·재고·알림·할인 추천.
 

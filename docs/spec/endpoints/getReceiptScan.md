@@ -33,7 +33,7 @@ receipts / `GetReceiptScan.execute(StoreId, ScanId) → ReceiptScanView`. `recei
 4. 기존 거래처·재료는 실제 id와 `isNew=false`, 새것은 `id=null`, `isNew=true`, name. `quantity`는 구매 단위다. 단가·전화번호·품명은 공개 스키마에 없으므로 내보내지 않는다.
 5. 질문 id는 result에 저장된 값 그대로다. 폴링할 때마다 바뀌지 않는다. `candidate`는 이 가게의 기존 재료다.
 6. `removedDuplicateTexts`에는 중복으로 뺀 영수증과 읽지 못해 뺀 사진·줄의 안내가 들어 있다(D22, D23).
-7. CONFIRMED: 결과를 그대로 돌려주되 새로 만든 거래처·재료의 id를 실제 id로 채운다. `questions=[]`.
+7. CONFIRMED: 확정 때 중복을 다시 확인한 최종 그룹·안내를 반환한다. 반영한 거래처·재료의 id는 실제 id다. `questions=[]`.
 
 ## 완료 조건
 

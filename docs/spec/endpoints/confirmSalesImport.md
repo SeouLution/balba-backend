@@ -37,11 +37,10 @@ sales / `ConfirmSalesImport.execute(StoreId, ImportId) → Accepted`. 요청 본
 [엑셀 읽기](../infrastructure/integrations.md)의 반영 규칙을 따른다. 한 트랜잭션에서 메뉴 upsert → daily_sales 칸 교체 → 판매가 갱신 → COMPLETED → 후속 작업 등록(레시피 없는 메뉴가 있으면 GENERATE_RECIPES, 오늘·내일 GENERATE_FORECAST)을 한다.
 
 - 같은 메뉴·날짜는 더하지 않고 새 파일의 합계로 교체한다.
-- 파일에 없는 메뉴는 그대로 둔다.
-- 파일 기간 안에서 행이 없는 메뉴·날짜는 0개 판매로 읽힌다(D08).
+- 첫 파일 기간 안에서 행이 없는 메뉴·날짜는 0개 판매로 읽힌다(D08). 겹치는 새 파일에서 누락된 기존 판매의 처리는 미정(U02)이다.
 - 판매가는 나중에 반영한 파일의 값이 남는다.
 - 이미 레시피가 있는 메뉴는 다시 만들지 않는다.
 
 ## 완료 조건
 
-동시 confirm 2건에 작업 1개, 반영 중 중단 시 rollback 후 재실행, COMPLETED 재요청 무변경, 기간이 겹치는 두 파일의 칸 교체, 후속 작업이 같은 트랜잭션에 등록되는 것을 검증한다.
+동시 confirm 2건에 작업 1개, 반영 중 중단 시 rollback 후 재실행, COMPLETED 재요청 무변경, 첫 파일 기간 안의 빈 칸을 0으로 읽는 것, 후속 작업이 같은 트랜잭션에 등록되는 것을 검증한다.

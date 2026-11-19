@@ -22,13 +22,13 @@
 
 ## 책임과 경계
 
-discounts / `RecommendDiscounts.execute(StoreContext, applyBaseTime=true) → DiscountRecommendationsView`. 저장된 추천을 읽지 않고 요청할 때 계산한다(D25). 계산 규칙은 [C06](../domain/calculations.md)이다.
+discounts / `RecommendDiscounts.execute(StoreContext) → DiscountRecommendationsView`. 저장된 추천을 읽지 않고 요청할 때 계산한다(D25). 계산 규칙은 [C06](../domain/calculations.md)이다.
 
 ## 처리 순서
 
 1. store를 확인한다. `date`는 요청 시각의 KST 오늘, `baseTime`은 `policy.discount.base_time`(17:00)이다.
 2. 요청 시각이 baseTime 전이거나 오늘이 휴무면 `recommendations=[]`, `surplusStock=[]`로 200.
-3. 한 읽기 트랜잭션에서 오늘 끝 기준 재고(C04), 레시피, 메뉴 판매가, 최근 단가, 영업시간, 내일 예측을 읽어 C06으로 계산한다.
+3. 한 읽기 트랜잭션에서 오늘 끝 기준 재고(C04), 레시피, 메뉴 판매가, 최근 단가, 영업시간과 내일 PlanOrder의 감소 재료 ID를 읽어 C06으로 계산한다. 발주 팩 수는 ordering에서만 계산한다.
 4. `recommendations`: id(`rec_<date>_<menuId>`), menu, unit, discount, startTime, quantity, reasonText, expectedSavings(양의 정수). 고른 순서대로 돌려준다.
 5. `surplusStock`: C06의 표대로 ingredientId 순. quantity는 사용 단위다.
 6. 200. DB에 쓰지 않고 외부 서비스를 부르지 않는다.

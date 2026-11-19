@@ -6,7 +6,7 @@
 
 - 업무 행과 작업 행을 같은 트랜잭션에 저장한다. 202는 파일 저장과 이 commit이 끝난 뒤에만 돌려준다.
 - 루프는 2초마다 `state=READY`이고 `available_at`이 지난 작업을 `created_at` 순으로 하나 꺼내 `RUNNING`으로 바꾸고 handler를 실행한다. 한 번에 하나만 실행한다.
-- 성공하면 `SUCCEEDED`. 실패하면 `attempts`를 올리고 30초/120초 뒤로 `available_at`을 미뤄 `READY`로 되돌린다. 3번째 실패에서 `DEAD`. 입력이 잘못돼 다시 해도 같은 결과인 실패는 바로 `DEAD`.
+- 업무 결과를 DB에 반영하는 handler는 후속 작업·결과와 `SUCCEEDED`를 같은 트랜잭션에 기록한다. 실패하면 `attempts`를 올리고 30초/120초 뒤로 `available_at`을 미뤄 `READY`로 되돌린다. 3번째 실패에서 `DEAD`. 입력이 잘못돼 다시 해도 같은 결과인 실패는 바로 `DEAD`.
 - 프로세스가 시작할 때 `RUNNING`으로 남은 작업을 모두 `READY`로 되돌린다. 서버가 작업 도중 꺼졌다는 뜻이기 때문이다.
 - handler 하나의 외부 호출은 전체 90초 안에 끝낸다. 영수증 30장처럼 오래 걸리는 작업은 handler 안에서 장 단위로 나눠 호출한다.
 - 같은 작업이 두 번 실행돼도 업무 반영은 한 번이어야 한다. handler는 먼저 업무 상태를 확인하고, 이미 반영된 상태면 아무것도 하지 않고 성공으로 끝낸다.
@@ -46,7 +46,7 @@ GENERATING 동안 setCoreIngredients와 saveRecipes는 422다. 작업이 DEAD면
 
 ## 스케줄
 
-모든 시각은 KST다. 작업 루프가 1분마다 아래 표를 확인해 해당 시각이 지난 slot의 작업을 등록한다. dedupe_key가 같으면 다시 등록되지 않으므로 여러 번 확인해도 한 번만 실행된다. `DEMO_NOW`가 설정돼 있으면 스케줄 등록을 하지 않는다(시각이 흐르지 않기 때문이다).
+모든 시각은 KST다. 작업 루프가 1분마다 아래 표를 확인해 해당 시각이 지난 slot의 작업을 등록한다. dedupe_key가 같으면 다시 등록되지 않으므로 여러 번 확인해도 한 번만 실행된다. `DEMO_NOW`가 설정돼 있으면 주기 스케줄러는 등록을 건너뛴다. 시연에서 지정한 slot의 1회 등록은 [실행 환경](runtime.md)을 따른다.
 
 | 시각 | 대상 가게 | 작업 |
 |---|---|---|
@@ -55,9 +55,9 @@ GENERATING 동안 setCoreIngredients와 saveRecipes는 422다. 작업이 DEAD면
 | 07:20 | 좌표와 메뉴가 있는 가게 | 오늘 REFRESH_CONTEXT(MORNING) → 끝나면 GENERATE_FORECAST(MORNING) |
 | 07:30 | push_token이 있고 오늘이 영업일인 가게 | 오늘 SEND_PUSH(MORNING) |
 
-- SEND_PUSH는 대상일 예측이 아직 없으면 1분 뒤로 미루기를 최대 10번 하고, 그래도 없으면 보내지 않고 끝낸다. 지난 slot의 알림을 나중에 보내지 않는다.
-- REFRESH_CONTEXT는 날씨와 행사를 받아 weather, event에 저장한다. MORNING에서는 저장돼 있던 전날 밤 `summary_text`와 비교해 `change_text`를 채운다. 외부 호출이 실패하면 기존 행을 그대로 두고 GENERATE_FORECAST는 그대로 등록한다.
-- GENERATE_FORECAST는 대상일의 모든 메뉴 예측을 다시 계산해 upsert한다(C02). `adjusted`, `produced`는 건드리지 않는다. 가게의 첫 예측이면 `store.first_forecast_at`을 채운다.
+- SEND_PUSH는 같은 가게·대상일·slot의 GENERATE_FORECAST가 SUCCEEDED일 때 그 작업의 푸시 문구를 보낸다. 이전 slot 예측만 있거나 해당 작업이 진행 중이면 1분 뒤로 최대 10회 미룬다. DEAD·문구 없음·대기 만료면 발송 없이 끝낸다. 지난 slot의 알림을 나중에 보내지 않는다.
+- REFRESH_CONTEXT는 날씨와 행사를 받아 weather, event에 저장한다. MORNING에서는 같은 대상일 NIGHT 예측 작업의 `nightReference.weatherText`와 새 문구를 C02대로 비교한다. DATA_CHANGED에서 새 날씨 문구가 달라지면 기존 change_text는 지운다. 외부 호출이 실패하면 기존 행을 그대로 두고 GENERATE_FORECAST는 그대로 등록한다.
+- GENERATE_FORECAST는 대상일의 모든 메뉴 예측을 다시 계산해 upsert한다(C02). `adjusted`, `produced`는 건드리지 않는다. 첫 예측 행이 생기면 같은 UoW에서 `StoreWriter.markFirstForecast`를 호출한다. NIGHT·MORNING의 기준값과 푸시 문구는 [작업 payload 계약](../02-boundary-contracts.md)에 따라 기록한다.
 - 가게 생성 때 GEOCODE_STORE를 등록하고, 좌표가 저장되면 오늘·내일 REFRESH_CONTEXT를 등록한다.
 
 ## 수용 조건

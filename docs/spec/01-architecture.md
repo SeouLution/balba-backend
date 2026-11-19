@@ -61,10 +61,10 @@ tests/{unit,contract,integration,acceptance}/
 | forecasting | forecast, weather, event | sales, catalog, stores |
 | inventory | 없음 | receipts, sales, forecasting, catalog |
 | ordering | purchase_order, purchase_order_line | forecasting, inventory, receipts(단가), suppliers, catalog |
-| discounts | discount | inventory, catalog, receipts(단가), stores |
+| discounts | discount | inventory, catalog, receipts(단가), stores, ordering(내일 실제 발주 감소 여부) |
 | views | 없음 | 위 전부 |
 
-의존은 한 방향이다: `views → ordering/discounts → inventory → forecasting → sales/catalog/stores`. 아래 모듈이 위 모듈을 부르지 않는다.
+의존은 한 방향이다: `views → discounts → ordering → inventory → forecasting → sales/catalog/stores`. 아래 모듈이 위 모듈을 부르지 않는다.
 
 여러 모듈의 결과를 한 응답으로 묶는 유스케이스는 `views`에 둔다. 다른 모듈에 두면 순환이 생긴다.
 
@@ -74,7 +74,7 @@ tests/{unit,contract,integration,acceptance}/
 | adjustForecast | views | 준비량 저장(forecasting) 뒤 발주 요약(ordering)을 다시 계산 |
 | listIngredients | views | 재료(catalog)·단가(receipts)·거래처(suppliers)·알림(inventory)을 조합 |
 
-**발주 계획은 `ordering.PlanOrder` 한 곳에서만 만든다.** getHome, adjustForecast, getOrderPlan은 이 유스케이스를 호출만 한다. 재고·단가·거래처·행사 입력을 각자 다시 모으지 않는다. **알림(EXPIRY_IMMINENT, PRICE_CHANGED)도 `views.BuildAlerts` 한 곳에서만 만든다.** getHome의 `cautions`와 listIngredients의 `notices`가 같은 결과를 쓴다.
+**발주 계획은 `ordering.PlanOrder` 한 곳에서만 만든다.** getHome, adjustForecast, getOrderPlan은 이 유스케이스를 호출한다. 할인 추천도 같은 읽기 UoW에서 내일 PlanOrder가 반환한 감소 재료 ID를 사용한다. 재고·단가·거래처·행사 입력을 각자 다시 모으지 않는다. **알림(EXPIRY_IMMINENT, PRICE_CHANGED)도 `views.BuildAlerts` 한 곳에서만 만든다.** getHome의 `cautions`와 listIngredients의 `notices`가 같은 결과를 쓴다.
 
 ## 계층 규칙
 
@@ -98,7 +98,7 @@ tests/{unit,contract,integration,acceptance}/
 
 ## 데이터 변경 뒤의 후속 처리
 
-계산 결과 중 저장하는 것은 예측(forecast)뿐이다. 발주 계획, 재고, 알림, 할인 추천은 조회할 때 계산하므로 무효화할 캐시가 없다.
+계산 결과 중 예측은 forecast에 저장하고, 밤사이 비교와 푸시에 필요한 시점별 결과는 해당 예측 작업에 남긴다. 발주 계획, 재고, 알림, 할인 추천은 조회할 때 계산하므로 무효화할 캐시가 없다.
 
 | 변경 | 같은 트랜잭션에서 등록하는 작업 |
 |---|---|

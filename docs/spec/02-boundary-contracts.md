@@ -50,7 +50,7 @@
 | NearbyEvent | `id, name, place:string?, distanceMeters:int, startAt, endAt, crowdLevel?, expectedVisitors:int?, peakFrom:LocalTime?, peakTo:LocalTime?, detailUrl:string?` |
 | ForecastSnapshot | `menu:MenuSnapshot, targetDate, baseline, recommended, adjusted:NonNegativeQty?, produced:NonNegativeQty?, eventDiff:SignedQty, previousRecommended:NonNegativeQty?, summaryText:string?` |
 | OrderPlanningLine | `ingredient, supplier, quantity:PurchaseQuantity, stock:PurchaseQuantity?, price:Won?, eventDiff:SignedQty, productName` |
-| OrderPlanSnapshot | `targetDate, lines:List<OrderPlanningLine>, events:List<NearbyEvent>, usualTotal:Won?, total:Won?` |
+| OrderPlanSnapshot | `targetDate, lines:List<OrderPlanningLine>, events:List<NearbyEvent>, usualTotal:Won?, total:Won?, reducedIngredientIds:List<IngredientId>` |
 | DiscountEvaluation | `menu, date, discount:{type,value}, startTime, quantity:PositiveQty, originalPrice:Won, discountedPrice:Won, wasteCostAvoided:Won?, revenueReduction:Won, promoText, channels` |
 | DiscountRecommendationsView | `date, baseTime, recommendations:List<{id, evaluation:DiscountEvaluation, expectedSavings:int, reasonText}>, surplusStock:List<{ingredient, quantity:UsageQuantity, wasteCost:Won?, mitigation}>` |
 | AlertSnapshot | `id, type:EXPIRY_IMMINENT\|PRICE_CHANGED, title, message:string?, actions:List<OPEN_DISCOUNTS>` |
@@ -65,6 +65,7 @@
 | 모듈 / 포트 | 시그니처 | 보장 |
 |---|---|---|
 | stores / StoreReader | `require(StoreId) → StoreSnapshot` | 없으면 NotFound |
+| stores / StoreWriter | `markFirstForecast(UoW, StoreId, Instant) → void` | 최초 예측 행이 생긴 트랜잭션에서 first_forecast_at이 null일 때만 기록 |
 | catalog / CatalogReader | `snapshot(StoreId) → CatalogSnapshot` | 모든 참조가 같은 가게 |
 | catalog / CatalogWriter | `upsertImportedMenus(UoW, StoreId, List<MenuImportDraft>) → List<MenuSnapshot>` | 이름으로 upsert, 기존 단위·레시피 보존 |
 | catalog / CatalogWriter | `resolveReceiptIngredients(UoW, StoreId, List<IngredientResolution>) → List<IngredientSnapshot>` | 영수증 확정에서만 호출 |
@@ -75,23 +76,26 @@
 | suppliers / SupplierReader | `list(StoreId) → List<SupplierSnapshot>` | id 순 |
 | suppliers / SupplierWriter | `resolve(UoW, StoreId, List<SupplierDraft>) → List<SupplierSnapshot>` | 이름으로 upsert, 확인된 전화·요일 보호 |
 | suppliers / SupplierWriter | `confirmPhone(UoW, SupplierId, phone) → void` | recordSent가 호출 |
+| forecasting / ForecastWriter | `setAdjusted(UoW, StoreId, LocalDate, MenuId, NonNegativeQty) → ForecastSnapshot` | 기존 행의 adjusted만 교체 |
 | forecasting / ForecastReader | `read(StoreId, LocalDate) → List<ForecastSnapshot>` | 저장된 값만 반환 |
 | forecasting / ForecastReader | `usage(StoreId, from, through) → List<{menuId, date, produced?, planned}>` | 재고 계산의 '판매 기록 없는 날' 입력 |
 | forecasting / ContextReader | `read(StoreId, targetDate) → {weather:WeatherSnapshot?, events:List<NearbyEvent>}` | 반경·기간 조건 적용 완료 |
 | forecasting / ForecastCalculator | `build(store, targetDate, menus, sales, weather?, events, policy) → List<ForecastSnapshot>` | IO 없음 |
 | inventory / InventoryCalculator | `evaluate(catalog, sales, usage, lots, businessHours, asOf, policy) → List<InventorySnapshot>` | IO 없음 |
 | inventory / InventoryReader | `endOf(StoreId, asOf:LocalDate) → List<InventorySnapshot>` | 위 입력을 모아 asOf 영업 종료 시점 재고를 계산. 재고를 읽는 모든 곳이 이것만 쓴다 |
-| ordering / PlanOrder | `execute(StoreContext, targetDate) → OrderPlanSnapshot` | 발주 계획의 유일한 진입점 |
+| ordering / PlanOrder | `execute(UoW, StoreContext, targetDate) → OrderPlanSnapshot` | 발주 계획의 유일한 진입점 |
 | ordering / OrderPlanner | `plan(catalog, forecasts, inventory, latestPurchase, suppliers, events, weekday, policy) → OrderPlanSnapshot` | IO 없음. PlanOrder 안에서만 호출 |
 | discounts / DiscountCalculator | `evaluate(DiscountInput, menu, catalog, inventory, latestPurchase, policy) → DiscountEvaluation` | IO 없음. dryRun과 실제 생성이 같이 씀 |
-| discounts / RecommendDiscounts | `execute(StoreContext, applyBaseTime:bool) → DiscountRecommendationsView` | 조회할 때 계산(D25). 저장하지 않음. 알림 판정은 applyBaseTime=false로 호출 |
+| discounts / RecommendDiscounts | `execute(StoreContext) → DiscountRecommendationsView` | 조회할 때 계산(D25). 홈·재료 탭·할인 탭 모두 D28 적용 |
 | views / BuildAlerts | `execute(StoreContext) → List<AlertSnapshot>` | 알림의 유일한 진입점 |
+
+읽기 포트와 조합 유스케이스는 호출자가 연 UoW의 세션을 함께 쓴다. 쓰기 포트는 flush 후 같은 UoW에서 결과가 보이게 하고 최종 commit은 최상위 유스케이스에서 한다. `reducedIngredientIds`는 C05의 내부 계산 결과이며 공개 OrderPlan 필드에서 제외한다.
 
 `MenuImportDraft={name, unit, price:Won?}`. `IngredientResolution={sourceKey, existingIngredientId 또는 newName, usageUnit?, conversion?, shelfLifeDays?}`. `SupplierDraft={sourceKey, name, phone?, purchasedOnDates}`. `DiscountInput`은 `DiscountCreate`를 검증한 내부 타입이다.
 
 ## 작업 payload
 
-`background_job.payload`는 아래 필드만 담는다. 파일 내용이나 OCR 결과를 넣지 않고 DB 행을 가리킨다.
+작업을 등록할 때 `background_job.payload`에는 아래 입력 필드를 담는다. 파일 내용이나 OCR 결과를 넣지 않고 DB 행을 가리킨다.
 
 | kind | payload | dedupe_key |
 |---|---|---|
@@ -101,7 +105,9 @@
 | GENERATE_RECIPES | `storeId, importId` | `recipe:<importId>` |
 | SCAN_RECEIPTS | `storeId, scanId` | `ocr:<scanId>` |
 | REFRESH_CONTEXT | `storeId, targetDate, slot` | `context:<storeId>:<date>:<slot>` |
-| GENERATE_FORECAST | `storeId, targetDate, slot` | `forecast:<storeId>:<date>:<slot>` (DATA_CHANGED는 끝에 `:<등록 시각 yyyyMMddHHmm>`을 붙임) |
+| GENERATE_FORECAST | `storeId, targetDate, slot`, DATA_CHANGED는 `sourceJobId` 포함 | `forecast:<storeId>:<date>:<slot>` (DATA_CHANGED는 끝에 `:<sourceJobId>`를 붙임) |
 | SEND_PUSH | `storeId, targetDate, slot:NIGHT\|MORNING` | `push:<storeId>:<date>:<slot>` |
 
-`slot`은 `NIGHT | MORNING | DATA_CHANGED`다. 같은 dedupe_key가 이미 있으면 새로 등록하지 않는다.
+NIGHT 예측 성공 시 같은 작업의 payload에 내부 결과 `nightReference={recommendedByMenuId, weatherText}`를 남긴다. NIGHT·MORNING 예측은 푸시에 쓸 C07 문구도 같은 작업에 저장한다(예측 항목이 없으면 null). 예측 반영·결과 기록·SUCCEEDED는 같은 commit이다. 같은 대상일 비교와 푸시는 이 결과를 사용한다.
+
+`slot`은 `NIGHT | MORNING | DATA_CHANGED`다. 같은 dedupe_key가 이미 있으면 새로 등록하지 않는다. DATA_CHANGED의 sourceJobId는 후속 예측을 등록한 APPLY_SALES 또는 REFRESH_CONTEXT 작업 ID다. 고정된 시연 시각에서도 서로 다른 변경은 각각 반영되고 같은 작업의 재시도만 합쳐진다.

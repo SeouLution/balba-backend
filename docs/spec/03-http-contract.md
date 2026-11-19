@@ -13,6 +13,7 @@ request/response 클래스는 별도다. 내부 snake_case와 공개 camelCase�
 - `required`이면서 nullable이면 반드시 키를 쓰고 값이 없으면 null이다. 예: PriceInfo.unitPrice.
 - 선택이면서 non-nullable이면 모를 때 생략한다. 예: IngredientSummary.usageUnit, Discount.wasteCostAvoided.
 - 선택 nullable은 아래 모듈 규칙에 따라 null을 명시한다. IngredientSummary.purchaseUnit/price/supplier, ForecastItem.previousRecommended/produced가 해당한다.
+- 홈과 발주 계획은 같은 `EventSummary` 변환을 쓴다. 모르는 `place`, `crowdLevel`은 생략하고 `expectedVisitors`, `peakFrom`, `peakTo`, `detailUrl`은 null로 보낸다.
 - 목록은 빈 배열이며 null이 아니다. `NEEDS_CONFIRMATION`의 detection, `NEEDS_REVIEW`의 groups는 조건부 필수다.
 - 204와 본문 없는 202는 진짜 빈 body다. `null`이나 `{}`를 반환하지 않는다.
 

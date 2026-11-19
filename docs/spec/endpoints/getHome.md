@@ -28,7 +28,7 @@ views / `GetHome.execute(StoreContext) → HomeResponse`. ForecastReader, Contex
 
 1. store 실존을 확인하고 [C01](../domain/calculations.md)로 view/targetDate를 정한다.
 2. 한 읽기 트랜잭션에서 메뉴, targetDate 예측, 날씨, 반경 내 행사를 읽는다.
-3. `tiles`: 저장된 날씨가 없으면 `weather` 키를 생략한다. `events`는 반경 내 행사 목록이며 없으면 빈 배열이다. 행사의 모르는 값은 null이다.
+3. `tiles`: 저장된 날씨가 없으면 `weather` 키를 생략한다. `events`는 반경 내 행사 목록이며 없으면 빈 배열이다. 행사는 [공통 EventSummary 규칙](../03-http-contract.md)에 따라 변환한다.
 4. `forecast.items`는 예측이 있는 메뉴 중 상위 3개(C02), `totalMenuCount`는 전체 메뉴 수. 예측이 없으면 `items=[]`. `planned`는 adjusted 우선이고 0도 그대로 준다. `produced`와 `previousRecommended`는 TODAY에서만 값을 주고 TOMORROW에서는 null이다.
 5. `order`: TOMORROW에서 `PlanOrder(targetDate)` 결과에 줄이 있으면 `{supplierCount: 거래처 수, estimatedTotal: C05 금액 규칙}`, 줄이 없으면 null. TODAY에서는 `order` 키를 생략한다.
 6. `banners`: [C07](../domain/calculations.md) 조건에 맞는 것만 FIRST_FORECAST, OVERNIGHT_CHANGE, EVENT_TODAY, DELIVERY_EXPECTED 순으로 넣는다.

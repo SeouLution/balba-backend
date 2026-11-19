@@ -212,7 +212,7 @@ paths:
       tags: [2.0 홈]
       operationId: getHome
       summary: "2.0-1 온보딩 직후 · 2.2 당일 아침 · 2.7-1 행사 펼친 상태 · 2.9 행사 당일 아침"
-      description: "날씨 · 근처 행사 · 예측 상위 3개 · 발주 요약 · 주의할 것을 한 번에 내려줍니다. 전날 밤 화면과 당일 아침 화면 중 무엇을 그릴지는 `view`로 내려주며, 두 화면이 바뀌는 시각 기준은 **미정**입니다."
+      description: "날씨 · 근처 행사 · 예측 상위 3개 · 발주 요약 · 주의할 것을 한 번에 내려줍니다. 전날 밤 화면과 당일 아침 화면 중 무엇을 그릴지는 `view`로 내려주며, 한국 시각 00:00부터 20:00 전까지는 TODAY(오늘), 20:00부터 자정 전까지는 TOMORROW(내일)입니다."
       responses:
         "200":
           description: "홈"
@@ -965,7 +965,7 @@ components:
     # ───────── 홈 · 날씨 · 행사 ─────────
     HomeView:
       type: string
-      description: "TOMORROW 전날 밤(준비량 · 발주) · TODAY 당일 아침(오늘 미리 만들어둘 양). 두 화면이 바뀌는 시각 기준은 미정"
+      description: "TOMORROW 전날 밤(준비량 · 발주) · TODAY 당일 아침(오늘 미리 만들어둘 양). Asia/Seoul 기준 20:00에 TOMORROW, 자정에 TODAY로 전환"
       enum: [TOMORROW, TODAY]
     WeatherCondition:
       type: string

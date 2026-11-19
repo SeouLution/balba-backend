@@ -24,13 +24,13 @@
 
 ## 책임과 경계
 
-views / `AdjustForecast.execute(StoreContext, date, menuId, quantity:NonNegativeQty) → ForecastAdjustmentResult`. 준비량 저장은 forecasting의 쓰기 포트로, 발주 요약은 `ordering.PlanOrder`로 한다. forecasting이 ordering을 부르지 않게 조합을 views에 둔다.
+views / `AdjustForecast.execute(StoreContext, date, menuId, quantity:NonNegativeQty) → ForecastAdjustmentResult`. 준비량 저장은 `ForecastWriter.setAdjusted`로, 발주 요약은 `ordering.PlanOrder`로 한다. forecasting이 ordering을 부르지 않게 조합을 views에 둔다.
 
 ## 처리 순서
 
 1. store/menu 소속을 확인한다. date는 오늘 또는 내일만 받는다(D16, 아니면 422). 그 날짜·메뉴의 forecast 행이 없으면 404다. 없는 예측을 수량만으로 만들지 않는다.
 2. store를 잠그고 quantity를 `adjusted`에 **절대값**으로 저장한다. 0도 정상 값이며 null과 다르다. recommended/baseline/produced는 바꾸지 않는다.
-3. 같은 트랜잭션에서 `PlanOrder(date)`를 실행해 방금 저장한 준비량이 반영된 발주 계획을 얻는다.
+3. 같은 트랜잭션에서 `PlanOrder(uow, context, date)`를 실행해 방금 저장한 준비량이 반영된 발주 계획을 얻는다.
 4. `item`은 저장 후의 ForecastItem이다. `order`는 date가 내일이면 getHome과 같은 규칙의 요약(줄이 없으면 null), date가 오늘이면 null이다.
 5. commit 후 200. 발주 계산에서 예상하지 못한 오류가 나면 전체 rollback한다.
 

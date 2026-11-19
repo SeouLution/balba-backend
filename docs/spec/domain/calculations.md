@@ -10,7 +10,7 @@ DayHours는 MON~SUN 정확히 1개씩이다. closed=false면 open/close 필수, 
 
 ## C02 예측
 
-**판매 기록이 있는 날**은 반영이 끝난(COMPLETED) 판매 파일의 기간(`period_from~period_to`) 안에 든 날이다. 그 안에서 행이 없는 메뉴는 0개 판매다(D08).
+**판매 기록이 있는 날**은 반영이 끝난(COMPLETED) 판매 파일의 기간(`period_from~period_to`) 안에 든 날이다. 첫 파일에서 기간 안에 행이 없는 메뉴는 0개 판매다(D08). 새 파일에서 빠진 기존 판매 칸의 처리는 U02 결정 대상이다.
 
 메뉴 m, 대상일 d의 baseline은 `d−7, d−14, d−21, d−28` 중 판매 기록이 있는 날의 판매량 평균이다. 기록이 없는 날은 표본에서 뺀다. 표본이 0개면 그 메뉴의 예측을 만들지 않는다. 휴무일인 d는 예측을 만들지 않는다.
 
@@ -28,11 +28,7 @@ comparison.direction = |diff| ≤ policy.forecast.similar_max_diff 이면 SIMILA
 
 comparison은 사용자가 고친 값(adjusted)이 아니라 recommended 기준이다. `adjusted=0`과 `produced=0`은 null과 다르며 예측을 다시 만들어도 그대로 둔다.
 
-**previousRecommended (밤사이 변경)**: 대상일이 오늘인 예측을 다시 만들 때만 다룬다.
-
-- 새 recommended가 저장된 recommended와 다르고 `previous_recommended`가 null이면, 바뀌기 전 값을 `previous_recommended`에 넣는다.
-- 새 recommended가 `previous_recommended`와 같아지면 `previous_recommended`를 null로 되돌린다.
-- 대상일이 내일인 예측을 다시 만들 때는 `previous_recommended`를 건드리지 않는다(null).
+**밤사이 변경**은 같은 대상일의 NIGHT와 MORNING 결과를 비교한다. NIGHT 성공 때 메뉴별 recommended와 당시 날씨 문구를 해당 작업의 내부 결과에 남긴다. MORNING은 그 밤의 값과 추천량이 달라진 메뉴에만 밤 값을 `previous_recommended`로 기록한다. 밤 기준값이 없거나 추천량이 같으면 null이다. 날씨 문구도 두 slot의 값이 모두 있고 다를 때만 changeText를 만든다. DATA_CHANGED는 밤 기준값을 만들지 않는다. 낮 재계산이 recommended를 변경하면 해당 메뉴의 이전 비교 표시는 지운다. 재시도는 같은 밤 기준값으로 비교한다.
 
 홈 상위 3개는 대상일 이전 28일 판매합 내림차순, 동률은 menuId 순이다. `totalMenuCount`는 등록된 전체 메뉴 수다. 예측이 있는 메뉴가 2개면 2개만 보낸다.
 
@@ -72,6 +68,8 @@ comparison은 사용자가 고친 값(adjusted)이 아니라 recommended 기준�
 5. 최근 거래처(C03)와 환산 비율이 있는 줄만 넣는다. 요청 시각의 요일이 주문 요일이고 `orderDaysStatus`가 ESTIMATED 또는 CONFIRMED인 거래처만 보여준다. UNKNOWN이거나 요일이 비었으면 뺀다.
 6. 각 줄은 구매 단위 quantity, 같은 단위 stock, 같은 단위 eventDiff를 가진다. `price.unitPrice`는 null일 수 있다.
 
+**할인 화면의 발주 감소 판정**도 PlanOrder에서 구한다. 내일 주문 가능한 각 재료에 대해 C06에 표시할 기간(내일~`policy.discount.surplus_within_days`일)에 만료되는 잔여 lot만 제외했을 때와 포함했을 때의 팩 수를 같은 C05 식으로 비교한다. 나머지 재고와 준비량·거래처·요일은 고정한다. 포함 후 팩 수가 실제로 줄어든 재료 ID를 내부 결과에 담는다. 1판에서 0판이 되어 공개 줄이 사라지는 경우도 포함한다. 휴무·주문 불가·환산 불가인 재료는 제외한다.
+
 **eventDiff**: 같은 조건에서 `eventFactor=1`로 준비량을 다시 계산해 만든 계획의 팩 수와의 차이다. 사용자가 고친 메뉴(adjusted)는 행사 유무와 무관하게 같은 값을 쓰므로 그 메뉴의 증분은 0이다. `OrderPlan.events`에는 eventFactor가 1이 아닐 때 그 근거가 된 행사를 넣고, 아니면 빈 배열이다.
 
 **금액(D13)**: 합계는 단가를 아는 줄의 `roundHalfUp(quantity × unitPrice)`만 더한다. 단가를 아는 줄이 하나도 없으면 null이다. `Home.order.estimatedTotal`, `OrderPlan.usualTotal`, `purchase_order.total_amount`가 모두 이 규칙을 쓴다. `usualTotal`은 준비량을 baseline(올림)으로 바꿔 같은 방법으로 계산한 계획의 합계다. 줄이 하나도 없으면 `suppliers=[]`이고 `Home.order=null`이다(D20).
@@ -88,27 +86,29 @@ comparison은 사용자가 고친 값(adjusted)이 아니라 recommended 기준�
 
 | 조건 | quantity | wasteCost | mitigation |
 |---|---|---|---|
-| 추정 기한이 오늘인 남은 lot이 있음 | 그 lot들의 남은 양(사용 단위) | `남은 양 × 단가 ÷ usagePerPurchase`를 원 단위 반올림. 단가를 모르면 null | 아래 추천이 이 재료를 쓰면 DISCOUNT_RECOMMENDED, 아니면 NONE |
-| 추정 기한이 내일부터 `policy.discount.surplus_within_days`일 안인 남은 lot이 있음 | 그 lot들의 남은 양 | null | CORE 재료이고 내일 필요량(C05의 needUsage)이 0보다 크면 ORDER_REDUCED, 아니면 NONE |
+| 추정 기한이 오늘인 남은 lot이 있음 | 그 lot들의 남은 양(사용 단위) | `남은 양 × 단가 ÷ usagePerPurchase`를 원 단위 반올림. 단가를 모르면 null | 최종 선택된 추천이 이 재료의 오늘 만료 lot을 소진하면 DISCOUNT_RECOMMENDED, 아니면 NONE |
+| 추정 기한이 내일부터 `policy.discount.surplus_within_days`일 안인 남은 lot이 있음 | 그 lot들의 남은 양 | null | 내일 PlanOrder의 감소 재료 ID에 포함되면 ORDER_REDUCED, 아니면 NONE |
 
 한 재료가 두 조건에 모두 해당하면 첫째 줄만 만든다.
 
-**추천(recommendations)**: 기한이 오늘인 재료(임박 재료)를 쓰는 메뉴가 후보다. 판매가, 그 메뉴 레시피의 모든 재료 재고, 임박 재료의 단가를 모두 아는 메뉴만 후보가 된다.
+**추천(recommendations)**: 메뉴별로 사용량이 양수인 레시피 항목만 계산에 쓴다. 그중 기한이 오늘인 잔여 lot을 쓰는 재료가 하나 이상이어야 한다. 판매가, 계산에 쓰는 모든 재료의 재고와 임박 재료의 단가가 있어야 한다.
 
 ```text
 qAll    = floor(min_i(stock_i / recipeUsage_mi))                 (그 메뉴의 모든 재료, recipeUsage=0인 재료 제외)
 qExpiry = max_{i∈임박}(floor(surplus_i / recipeUsage_mi))
 quantity = min(qAll, qExpiry)            (1 미만이면 후보에서 뺀다)
 discount = PERCENT policy.discount.recommended_percent
-startTime = max(base_time, 오늘 마감 시각 − policy.discount.start_minutes_before_close 분)
+startTime = max(영업 시작, 영업일의 base_time, 영업 종료 − policy.discount.start_minutes_before_close 분)
 wasteCostAvoided = quantity만큼 만들 때 소진되는 임박 lot 사용량의 원가 합
 revenueReduction = roundHalfUp((originalPrice − discountedPrice) × quantity)
 expectedSavings  = wasteCostAvoided − revenueReduction    (양수인 후보만 남긴다)
 ```
 
+시각은 C01의 영업 시작·종료 날짜를 붙여 비교한다. 시작 후보가 종료 이상이면 추천에서 뺀다. API에는 HH:mm으로 변환하며 dryRun·생성과 같은 영업 구간 `[시작, 종료)` 및 입력 검증을 쓴다.
+
 후보 중 expectedSavings가 가장 큰 메뉴(동률은 menuId)를 고르고, 그 수량만큼 재고를 작업용 복사본에서 뺀 뒤 남은 후보를 다시 계산한다. 메뉴당 한 번만 고르고 양수 후보가 없으면 끝낸다. 같은 재고를 두 메뉴의 절감으로 두 번 세지 않는다. 추천 ID는 `rec_<YYYY-MM-DD>_<menuId>`다.
 
-**사용자가 만드는 할인(dryRun 포함)**: recommendationId 없이도 만들 수 있다. 판매가를 모르면 422. PERCENT는 `0<value≤100`, AMOUNT는 원 정수 `0<value≤originalPrice`. `discountedPrice = roundHalfUp(originalPrice × (1 − percent/100))` 또는 `originalPrice − amount`. quantity≥1. 임박 재고나 단가를 몰라 버릴 원가를 계산할 수 없으면 `wasteCostAvoided`를 **생략**하고 `revenueReduction`만 돌려준다. recommendationId가 오면 `rec_<오늘>_<요청 menuId>`와 같은지만 확인하고(다르면 422) 값은 요청대로 다시 계산한다.
+**사용자가 만드는 할인(dryRun 포함)**: recommendationId 없이도 만들 수 있다. 판매가를 모르면 422. PERCENT는 `0<value≤100`, AMOUNT는 원 정수 `0<value≤originalPrice`. `discountedPrice = roundHalfUp(originalPrice × (1 − percent/100))` 또는 `originalPrice − amount`. quantity≥1. 임박 재고나 단가를 몰라 버릴 원가를 계산할 수 없으면 `wasteCostAvoided`를 **생략**하고 `revenueReduction`만 돌려준다. recommendationId가 오면 `rec_<오늘>_<요청 menuId>`와 같은지만 확인하고(다르면 422) 할인 폭·시각·수량은 요청값을 따른다. 현재 추천과 입력이 같으면 그 추천 순번에 배분된 재고와 같은 계산 결과를 사용한다. 다른 입력 또는 현재 목록에 없는 추천 ID는 수동 할인처럼 현재 재고에서 다시 계산한다. GET·dryRun·생성은 원가와 할인가 계산을 공유한다.
 
 예: 판매가 5,000원, 10% 할인 5개 → 할인가 4,500원, revenueReduction 2,500원. 소진되는 임박 lot 원가가 9,000원이면 expectedSavings 6,500원.
 
@@ -122,7 +122,7 @@ expectedSavings  = wasteCostAvoided − revenueReduction    (양수인 후보만
 - OVERNIGHT_CHANGE: view=TODAY이고 `previousRecommended`가 있는 메뉴가 있거나 `weather.changeText`가 있을 때.
 - EVENT_TODAY: view=TODAY이고 오늘 영업시간과 겹치는 반경 내 행사가 있을 때.
 - DELIVERY_EXPECTED: view=TODAY이고 `target_date=오늘`이며 `sent_at`이 있는 발주서가 있을 때. 입고 예정 안내일 뿐 입고가 아니다.
-- EXPIRY_IMMINENT: 추정 기한이 오늘인 남은 lot이 있는 재료마다 1개(C06의 재고 기준). `actions=[OPEN_DISCOUNTS]`는 그 재료를 쓰는 추천 후보가 있을 때만 붙인다. 이 판정은 17:00 기준 시각을 적용하지 않고 계산한다(아침에도 "할인 추천이 있어요"가 나온다).
+- EXPIRY_IMMINENT: 추정 기한이 오늘인 남은 lot이 있는 재료마다 1개(C06의 재고 기준). 17시 전에는 만료 문구만 표시하고 `actions=[]`다(D28). 17시부터 같은 시각·데이터로 구한 할인 목록에서 그 재료가 `DISCOUNT_RECOMMENDED`일 때만 추천 문구와 `actions=[{type:OPEN_DISCOUNTS}]`를 붙인다.
 - PRICE_CHANGED: C03.
 - 할인 channels: `policy.discount.channels` 순서 그대로. `launch_url`이 빈 문자열이면 `launchUrl=null`.
 
@@ -139,7 +139,7 @@ expectedSavings  = wasteCostAvoided − revenueReduction    (양수인 후보만
 | OVERNIGHT_CHANGE | 추천량이 바뀐 메뉴가 있으면 title `밤사이 예보가 바뀌어 {메뉴}{을/를} {n}{단위} {줄였어요\|늘렸어요}` (차이가 가장 큰 메뉴 1개) · 날씨만 바뀌었으면 title `밤사이 날씨 예보가 바뀌었어요` · message null | 밤사이 예보가 바뀌어 김밥을 2줄 줄였어요 |
 | EVENT_TODAY | title `오늘 근처 행사 · {시작} ~ {끝}` (가장 가까운 행사) · 붐비는 시간을 알면 message `{H}~{H}시가 가장 붐벼요 · {행사 시작 H}시 전에 {상위 1개 메뉴} 준비를 끝내두세요`, 모르면 null | 13~16시가 가장 붐벼요 · 12시 전에 김밥 준비를 끝내두세요 |
 | DELIVERY_EXPECTED | title `어젯밤 발주한 재료가 오전에 들어와요` · message `{재료} {수량}{단위}`를 ` · `로 이어 최대 3개, 더 있으면 ` 외 {n}개` | 계란 3판 · 김 2속 · 떡 5kg |
-| EXPIRY_IMMINENT | title `{재료} 오늘까지` + 추천 후보가 있으면 ` · 할인 추천이 있어요` · message `입고일 기준으로 계산한 예상 기한이에요` | 어묵 오늘까지 · 할인 추천이 있어요 |
+| EXPIRY_IMMINENT | title `{재료} 오늘까지` + D28에 따라 이동 버튼을 표시할 때만 ` · 할인 추천이 있어요` · message `입고일 기준으로 계산한 예상 기한이에요` | 어묵 오늘까지 · 할인 추천이 있어요 |
 | PRICE_CHANGED | title `{재료} 단가가 {올랐어요\|내렸어요}` · message `{재료} 단가가 {이전}원 → {현재}원으로 {올랐어요\|내렸어요} ({±p}%)` | 계란 단가가 7,900원 → 8,900원으로 올랐어요 (+13%) |
 | `DiscountRecommendation.reasonText` | `{임박 재료}{이/가} 많이 들어가요` | 어묵이 많이 들어가요 |
 | `Discount.promoText` | `갓 만든 {메뉴}, 마감 전에 할인해요` | 갓 만든 떡볶이, 마감 전에 할인해요 |

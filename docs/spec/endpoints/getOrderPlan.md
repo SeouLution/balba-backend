@@ -30,7 +30,7 @@ ordering / `GetOrderPlan.execute(StoreContext, targetDate) → OrderPlanSnapshot
 1. store 실존을 확인한다. targetDate는 오늘 또는 내일만 받는다(D16, 아니면 422). targetDate가 휴무면 `suppliers=[]`, `events=[]`, `usualTotal=null`로 200.
 2. `PlanOrder(targetDate)`가 [C05](../domain/calculations.md)대로 계산한다: CORE 재료 필요량, targetDate 전날 끝 재고(C04), 최근 거래처·단가(C03), 오늘이 주문 요일인 거래처, 구매 팩 올림, 행사 증분.
 3. supplierId 순으로 묶고 그 안은 ingredientId 순이다. 줄마다 ingredient, quantity, price가 필수이고 price는 `{unitPrice:null}`일 수 있다. `stock`은 구매 단위 Quantity이고 계산할 수 없으면 null이다. `eventDiff`는 quantity와 같은 단위다.
-4. `events`는 준비량 계수에 반영한 행사, 반영한 것이 없으면 빈 배열. `usualTotal`은 C05의 평소 계획 합계 또는 null.
+4. `events`에는 준비량 계수에 반영한 행사를 홈과 같은 [EventSummary 규칙](../03-http-contract.md)으로 담는다. 없으면 빈 배열이다. `usualTotal`은 C05의 평소 계획 합계 또는 null.
 5. 200. 줄 금액과 현재 합계는 프론트가 `quantity.value × price.unitPrice`로 계산한다.
 
 거래처가 하나도 없으면(영수증을 건너뛴 직후) `suppliers=[]`다(D20).
