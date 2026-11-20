@@ -27,7 +27,7 @@
 
 `FileStore.put(stream, limits) → FileRef`, `open(FileRef) → stream`. 저장 위치는 `FILE_STORAGE_ROOT` 아래 `<storeId>/<종류>/<uuid>`다. 클라이언트가 보낸 파일명은 위치에 쓰지 않는다. 파일을 내려주는 공개 엔드포인트는 없다.
 
-한도는 [정책 파일](../policy-defaults.toml) `[upload]`를 따른다. 확장자, 실제 파일 시그니처, 크기를 함께 검사한다. 판매 파일은 xlsx/xls/csv, 영수증은 JPEG 1~30장이다. 파일을 먼저 저장한 뒤 DB 접수 트랜잭션을 연다. DB가 실패해 남은 파일은 참조가 없는 파일이므로 운영자가 지워도 된다.
+한도는 [정책 파일](../../../app/policies/defaults.toml) `[upload]`를 따른다. 확장자, 실제 파일 시그니처, 크기를 함께 검사한다. 판매 파일은 xlsx/xls/csv, 영수증은 JPEG 1~30장이다. 파일을 먼저 저장한 뒤 DB 접수 트랜잭션을 연다. DB가 실패해 남은 파일은 참조가 없는 파일이므로 운영자가 지워도 된다.
 
 ## 엑셀 읽기 (D09)
 

@@ -9,7 +9,7 @@
 1. [출처·범위·설계 결정](spec/00-scope-and-decisions.md): 결정 원장과 Figma 대조 결과.
 2. [전체 아키텍처](spec/01-architecture.md): 실행 구조, 모듈 소유권, 의존 방향.
 3. [공통 타입·포트](spec/02-boundary-contracts.md), [HTTP 규칙](spec/03-http-contract.md).
-4. [정책 기본값](spec/policy-defaults.toml): 계수, 유통기한, 메뉴 단위, 할인 기본값. AI 초안이며 이 파일만 고치면 된다.
+4. [정책 기본값](../app/policies/defaults.toml): 계수, 유통기한, 메뉴 단위, 할인 기본값. AI 초안이며 이 파일만 고치면 된다.
 5. [계산 규칙·문장 템플릿](spec/domain/calculations.md).
 6. [DB](spec/infrastructure/persistence.md), [비동기 작업](spec/infrastructure/jobs.md), [외부 연동](spec/infrastructure/integrations.md), [실행·운영](spec/infrastructure/runtime.md).
 7. [엔드포인트별 명세](spec/endpoints/README.md).

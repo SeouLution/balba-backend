@@ -54,7 +54,7 @@
 | DiscountEvaluation | `menu, date, discount:{type,value}, startTime, quantity:PositiveQty, originalPrice:Won, discountedPrice:Won, wasteCostAvoided:Won?, revenueReduction:Won, promoText, channels` |
 | DiscountRecommendationsView | `date, baseTime, recommendations:List<{id, evaluation:DiscountEvaluation, expectedSavings:int, reasonText}>, surplusStock:List<{ingredient, quantity:UsageQuantity, wasteCost:Won?, mitigation}>` |
 | AlertSnapshot | `id, type:EXPIRY_IMMINENT\|PRICE_CHANGED, title, message:string?, actions:List<OPEN_DISCOUNTS>` |
-| Policy | [정책 파일](policy-defaults.toml)을 읽은 불변 값. 계산 함수에 인자로 넘긴다. |
+| Policy | [정책 파일](../../app/policies/defaults.toml)을 읽은 불변 값. 계산 함수에 인자로 넘긴다. |
 
 `GeoPoint={latitude:float[-90,90], longitude:float[-180,180]}`.
 

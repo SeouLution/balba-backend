@@ -2,7 +2,7 @@
 
 ## 설정
 
-기존 `DATABASE_URL`, `CORS_ALLOWED_ORIGINS`, `GIT_SHA`를 유지한다. 숫자 기본값(전환 시각, 계수, 한도 등)은 환경변수가 아니라 [정책 파일](../policy-defaults.toml)에 둔다.
+기존 `DATABASE_URL`, `CORS_ALLOWED_ORIGINS`, `GIT_SHA`를 유지한다. 숫자 기본값(전환 시각, 계수, 한도 등)은 환경변수가 아니라 [정책 파일](../../../app/policies/defaults.toml)에 둔다.
 
 | 환경변수 | 필수 | 내용 |
 |---|---|---|

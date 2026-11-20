@@ -33,7 +33,7 @@ catalog / `ListIngredientCandidates.execute(StoreId) → CandidateList{generatio
 
 ## 배지 규칙
 
-GENERATE_RECIPES 작업이 끝날 때 이 가게 모든 재료의 `tags`를 [정책 파일](../policy-defaults.toml) `[tags]`로 다시 계산해 저장한다. 1.4는 영수증을 찍기 전 화면이므로 단가를 쓰지 않는다.
+GENERATE_RECIPES 작업이 끝날 때 이 가게 모든 재료의 `tags`를 [정책 파일](../../../app/policies/defaults.toml) `[tags]`로 다시 계산해 저장한다. 1.4는 영수증을 찍기 전 화면이므로 단가를 쓰지 않는다.
 
 - SHORT_SHELF_LIFE: `shelf_life_days`가 `short_shelf_life_max_days` 이하.
 - EXPENSIVE: 재료 이름에 `expensive_keywords` 중 하나가 들어 있음.
