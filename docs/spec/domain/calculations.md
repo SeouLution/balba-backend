@@ -17,7 +17,7 @@ DayHours는 MON~SUN 정확히 1개씩이다. closed=false면 open/close 필수, 
 ```text
 weatherFactor = policy.forecast.weather_factor_by_category[업종][상태]
                 없으면 policy.forecast.weather_factor[상태], 그것도 없거나 날씨를 모르면 1.0
-eventFactor   = 반경 policy.forecast.event_radius_meters 안에 d의 영업시간과 겹치는 행사가 하나라도 있으면
+eventFactor   = 반경 policy.forecast.event_radius_meters 안에 d의 영업시간과 겹치는 행사(D29의 분류만 저장됨)가 하나라도 있으면
                 policy.forecast.event_factor, 없으면 1.0   (행사가 여러 개여도 한 번만 곱한다)
 recommended   = ceil(baseline × weatherFactor × eventFactor)
 eventDiff     = recommended − ceil(baseline × weatherFactor)
@@ -108,7 +108,7 @@ expectedSavings  = wasteCostAvoided − revenueReduction    (양수인 후보만
 
 후보 중 expectedSavings가 가장 큰 메뉴(동률은 menuId)를 고르고, 그 수량만큼 재고를 작업용 복사본에서 뺀 뒤 남은 후보를 다시 계산한다. 메뉴당 한 번만 고르고 양수 후보가 없으면 끝낸다. 같은 재고를 두 메뉴의 절감으로 두 번 세지 않는다. 추천 ID는 `rec_<YYYY-MM-DD>_<menuId>`다.
 
-**사용자가 만드는 할인(dryRun 포함)**: recommendationId 없이도 만들 수 있다. 판매가를 모르면 422. PERCENT는 `0<value≤100`, AMOUNT는 원 정수 `0<value≤originalPrice`. `discountedPrice = roundHalfUp(originalPrice × (1 − percent/100))` 또는 `originalPrice − amount`. quantity≥1. 임박 재고나 단가를 몰라 버릴 원가를 계산할 수 없으면 `wasteCostAvoided`를 **생략**하고 `revenueReduction`만 돌려준다. recommendationId가 오면 `rec_<오늘>_<요청 menuId>`와 같은지만 확인하고(다르면 422) 할인 폭·시각·수량은 요청값을 따른다. 현재 추천과 입력이 같으면 그 추천 순번에 배분된 재고와 같은 계산 결과를 사용한다. 다른 입력 또는 현재 목록에 없는 추천 ID는 수동 할인처럼 현재 재고에서 다시 계산한다. GET·dryRun·생성은 원가와 할인가 계산을 공유한다.
+**사용자가 만드는 할인(dryRun 포함)**: recommendationId 없이도 만들 수 있다. 판매가를 모르면 422. PERCENT는 `0<value≤100`, AMOUNT는 원 정수 `0<value≤originalPrice`. `discountedPrice = roundHalfUp(originalPrice × (1 − percent/100))` 또는 `originalPrice − amount`. quantity≥1. 임박 재고나 단가를 몰라 버릴 원가를 계산할 수 없으면 `wasteCostAvoided`를 **생략**하고 `revenueReduction`만 돌려준다. 메뉴가 쓰는 모든 재료의 재고를 알고 임박 재고가 없으면 0이고, 재고를 모르는 재료가 있거나 레시피가 없으면 생략이다(D33). recommendationId가 오면 `rec_<오늘>_<요청 menuId>`와 같은지만 확인하고(다르면 422) 할인 폭·시각·수량은 요청값을 따른다. 현재 추천과 입력이 같으면 그 추천 순번에 배분된 재고와 같은 계산 결과를 사용한다. 다른 입력 또는 현재 목록에 없는 추천 ID는 수동 할인처럼 현재 재고에서 다시 계산한다. GET·dryRun·생성은 원가와 할인가 계산을 공유한다.
 
 예: 판매가 5,000원, 10% 할인 5개 → 할인가 4,500원, revenueReduction 2,500원. 소진되는 임박 lot 원가가 9,000원이면 expectedSavings 6,500원.
 
@@ -134,10 +134,10 @@ expectedSavings  = wasteCostAvoided − revenueReduction    (양수인 후보만
 |---|---|---|
 | `WeatherSummary.text` | `{상태}` · 낮에 비/눈이 시작하면 `{상태} · {H}시부터` | 비 · 14시부터 |
 | `WeatherSummary.changeText` | 아침 갱신 때 저장돼 있던 전날 밤 `text`와 새 `text`가 다르면 `{전날 밤 text} → {새 text}`, 같으면 null | 비 · 14시부터 → 비 · 13시부터 |
-| `ForecastItem.summaryText` | `지난 {n}주 {요일}요일 평균 {baseline 반올림}{단위}` + 행사 계수가 1이 아니면 ` · 행사 +{p}%` + 날씨 계수가 1이 아니면 ` · {상태} {±p}%` | 지난 4주 토요일 평균 58줄 · 행사 +20% |
-| FIRST_FORECAST | title `첫 예측이 준비됐어요` · message `{n}주치 판매 기록으로 계산했어요` | 6주치 판매 기록으로 계산했어요 |
+| `ForecastItem.summaryText` | `지난 {n}주 {요일}요일 평균 {baseline 반올림}{단위}` (n은 평균에 쓴 표본 수, D34) + 행사 계수가 1이 아니면 ` · 행사 +{p}%` + 날씨 계수가 1이 아니면 ` · {상태} {±p}%` | 지난 4주 토요일 평균 58줄 · 행사 +20% |
+| FIRST_FORECAST | title `첫 예측이 준비됐어요` · message `{n}주치 판매 기록으로 계산했어요` (n은 판매 기록 날짜 수 ÷ 7 올림, D34) | 6주치 판매 기록으로 계산했어요 |
 | OVERNIGHT_CHANGE | 추천량이 바뀐 메뉴가 있으면 title `밤사이 예보가 바뀌어 {메뉴}{을/를} {n}{단위} {줄였어요\|늘렸어요}` (차이가 가장 큰 메뉴 1개) · 날씨만 바뀌었으면 title `밤사이 날씨 예보가 바뀌었어요` · message null | 밤사이 예보가 바뀌어 김밥을 2줄 줄였어요 |
-| EVENT_TODAY | title `오늘 근처 행사 · {시작} ~ {끝}` (가장 가까운 행사) · 붐비는 시간을 알면 message `{H}~{H}시가 가장 붐벼요 · {행사 시작 H}시 전에 {상위 1개 메뉴} 준비를 끝내두세요`, 모르면 null | 13~16시가 가장 붐벼요 · 12시 전에 김밥 준비를 끝내두세요 |
+| EVENT_TODAY | title `오늘 근처 행사 · {시작} ~ {끝}` (가장 가까운 행사. 시각이 없는 자료의 표시는 U03) · 붐비는 시간을 알면 message `{H}~{H}시가 가장 붐벼요 · {행사 시작 H}시 전에 {상위 1개 메뉴} 준비를 끝내두세요`, 모르면 null | 13~16시가 가장 붐벼요 · 12시 전에 김밥 준비를 끝내두세요 |
 | DELIVERY_EXPECTED | title `어젯밤 발주한 재료가 오전에 들어와요` · message `{재료} {수량}{단위}`를 ` · `로 이어 최대 3개, 더 있으면 ` 외 {n}개` | 계란 3판 · 김 2속 · 떡 5kg |
 | EXPIRY_IMMINENT | title `{재료} 오늘까지` + D28에 따라 이동 버튼을 표시할 때만 ` · 할인 추천이 있어요` · message `입고일 기준으로 계산한 예상 기한이에요` | 어묵 오늘까지 · 할인 추천이 있어요 |
 | PRICE_CHANGED | title `{재료} 단가가 {올랐어요\|내렸어요}` · message `{재료} 단가가 {이전}원 → {현재}원으로 {올랐어요\|내렸어요} ({±p}%)` | 계란 단가가 7,900원 → 8,900원으로 올랐어요 (+13%) |
@@ -145,7 +145,7 @@ expectedSavings  = wasteCostAvoided − revenueReduction    (양수인 후보만
 | `Discount.promoText` | `갓 만든 {메뉴}, 마감 전에 할인해요` | 갓 만든 떡볶이, 마감 전에 할인해요 |
 | `PurchaseOrder.supplier.phoneSourceText` | 영수증에서 읽은 미확인 번호면 `{M/D} 영수증에서 읽었어요. 다음부터는 묻지 않아요`, 그 외 null | 11/8 영수증에서 읽었어요. 다음부터는 묻지 않아요 |
 | `PurchaseOrder.messageText` | 1줄 `[{가게명}] {targetDate M/D}({요일}) 발주` · 줄마다 `{품명} × {수량}{단위}` · 끝줄 `{내일\|M/D} 오전 {targetDate 여는 시각 H}시 전 도착 부탁드립니다.` (targetDate가 요청일 다음 날이면 `내일`). 품명은 최근 영수증의 품명, 없으면 재료 이름 | [행복분식] 11/11(수) 발주 … |
-| `ReceiptScan.removedDuplicateTexts` | 중복: `{M/D} {거래처} 영수증이 두 번 찍혀서 1장은 뺐어요` · 못 읽은 사진: `{n}번째 사진은 읽지 못해서 뺐어요` · 못 읽은 줄: `{M/D} {거래처} 영수증에서 {n}줄은 읽지 못해서 뺐어요` | 11/8 대한식자재 영수증이 두 번 찍혀서 1장은 뺐어요 |
+| `ReceiptScan.removedDuplicateTexts` | 중복: `{M/D} {거래처} 영수증이 두 번 찍혀서 1장은 뺐어요` · 못 읽은 사진: `{n}번째 사진은 읽지 못해서 뺐어요` · 못 읽은 줄(구매 단위가 달라 뺀 줄 포함, D31): `{M/D} {거래처} 영수증에서 {n}줄은 읽지 못해서 뺐어요` | 11/8 대한식자재 영수증이 두 번 찍혀서 1장은 뺐어요 |
 | 푸시 NIGHT | title `내일 준비량이 나왔어요` · body `{상위 1개 메뉴} {planned}{단위} 등 {N}개 메뉴` | 김밥 60줄 등 12개 메뉴 |
 | 푸시 MORNING | title `오늘 미리 만들어둘 양` · body 같은 형식 | 김밥 48줄 등 12개 메뉴 |
 

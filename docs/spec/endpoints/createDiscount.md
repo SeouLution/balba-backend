@@ -30,7 +30,7 @@ discounts / `CreateDiscount.execute(StoreContext, DiscountInput, dryRun:bool) �
 
 1. store/menu 소속을 확인한다(아니면 404). 메뉴 판매가가 없으면 422. 오늘이 휴무면 422. quantity≥1, 할인 값 범위, HH:mm을 검사한다. startTime은 오늘 영업 구간 `[시작, 종료)` 안이어야 한다(심야 영업은 C01). 요청 시각보다 이른 startTime도 받는다.
 2. recommendationId가 있으면 `rec_<오늘>_<요청 menuId>`와 같은지 확인한다. 다르면 422. C06에 따라 현재 추천과 입력이 같으면 그 순번의 재고 배분을 재현하고, 수정한 입력은 요청값으로 계산한다.
-3. 판매가, 레시피, 오늘 끝 기준 재고, 최근 단가로 할인가·revenueReduction·wasteCostAvoided를 계산한다. 버릴 원가를 계산할 수 없으면 `wasteCostAvoided`를 생략한다. 그래도 만들 수 있다.
+3. 판매가, 레시피, 오늘 끝 기준 재고, 최근 단가로 할인가·revenueReduction·wasteCostAvoided를 계산한다. 버릴 원가를 계산할 수 없으면 `wasteCostAvoided`를 생략한다. 그래도 만들 수 있다. 0과 생략의 구분은 D33을 따른다.
 4. `promoText`는 [C07](../domain/calculations.md) 템플릿, `channels`는 정책 파일 순서다. `date`는 오늘이다.
 5. dryRun=true: 읽기 전용으로 계산해 id=`preview_`+입력 해시로 200. DB에 쓰지 않고 작업도 등록하지 않는다.
 6. dryRun=false: store를 잠그고 다시 계산해 discount 한 행(menu_id, discount_type, discount_value, start_time, quantity, original_price, waste_cost_avoided, revenue_reduction, promo_text)을 저장하고 201.

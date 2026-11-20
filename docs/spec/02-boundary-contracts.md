@@ -27,7 +27,7 @@
 
 ## 오류와 모름
 
-- `UseCaseResult<T> = Success<T> | InvalidRequest(reason) | NotFound(kind) | InternalFailure(traceId)`. reason·traceId는 내부 전용이고 외부에는 422/404/500의 `{code}`만 나간다.
+- `UseCaseResult<T> = Success<T> | InvalidRequest(reason) | NotFound(kind) | InternalFailure(traceId)`. reason·traceId는 내부 전용이고 외부에는 422/404/500의 `{code}`만 나간다. 구현은 이 구분을 반환 타입 대신 예외로 표현한다(D36).
 - 외부 포트는 `ProviderResult<T> = Available<T> | Unavailable(retryable, reason) | InvalidPayload(reason)`를 돌려준다. timeout과 "결과 0건"을 구분한다.
 - 계산 결과가 모름일 수 있는 값은 `T?`로 표현한다. 모름을 0이나 빈 문자열로 바꾸지 않는다.
 
