@@ -24,6 +24,14 @@ class InternalFailure(Exception):
     pass
 
 
+class Unauthorized(Exception):
+    pass
+
+
+class Conflict(Exception):
+    pass
+
+
 @dataclass(frozen=True)
 class StoreContext:
     store_id: str

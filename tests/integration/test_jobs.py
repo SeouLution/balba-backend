@@ -49,7 +49,7 @@ async def test_migration_matches_the_erd(deps):
     for row in rows:
         if row.table_name != "alembic_version":
             actual.setdefault(row.table_name, set()).add(row.column_name)
-    assert len(declared) == 16
+    assert len(declared) == 17
     assert actual == declared
 
 

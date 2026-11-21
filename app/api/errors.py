@@ -7,7 +7,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.shared.types import InternalFailure, InvalidRequest, NotFound
+from app.shared.types import Conflict, InternalFailure, InvalidRequest, NotFound, Unauthorized
 
 logger = logging.getLogger("app.api")
 
@@ -50,6 +50,14 @@ def install(app: FastAPI) -> None:
     @app.exception_handler(NotFound)
     async def on_not_found(request: Request, error: NotFound):
         return _error(404, "NOT_FOUND")
+
+    @app.exception_handler(Unauthorized)
+    async def on_unauthorized(request: Request, error: Unauthorized):
+        return _error(401, "UNAUTHORIZED")
+
+    @app.exception_handler(Conflict)
+    async def on_conflict(request: Request, error: Conflict):
+        return _error(409, "CONFLICT")
 
     @app.exception_handler(InternalFailure)
     async def on_internal_failure(request: Request, error: InternalFailure):

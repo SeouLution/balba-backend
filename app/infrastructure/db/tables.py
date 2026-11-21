@@ -206,3 +206,13 @@ background_job = Table(
     Column("created_at", TIMESTAMP),
     Column("finished_at", TIMESTAMP),
 )
+
+app_user = Table(
+    "app_user",
+    metadata,
+    Column("id", Text, primary_key=True),
+    Column("phone_number", Text),
+    Column("password_hash", Text),
+    Column("store_id", Text),
+    Column("created_at", TIMESTAMP),
+)

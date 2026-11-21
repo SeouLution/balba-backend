@@ -57,6 +57,7 @@ async def deps(migrated_database, tmp_path):
         policy=load_policy(),
         files=FileStore(tmp_path / "uploads"),
         providers=fake_providers(),
+        jwt_secret="test-secret",
         scheduler_enabled=False,
     )
     yield container

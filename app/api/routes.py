@@ -1,14 +1,14 @@
-"""25개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
+"""29개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, File, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api import presenters
 from app.api import schemas as dto
 from app.bootstrap import Container
-from app.modules import catalog, discounts, forecasting, ordering, receipts, sales, stores, suppliers, views
+from app.modules import accounts, catalog, discounts, forecasting, ordering, receipts, sales, stores, suppliers, views
 from app.shared.types import DayHours, InternalFailure, parse_hhmm
 
 router = APIRouter(prefix="/v1")
@@ -31,6 +31,49 @@ def _json(body: dict, status_code: int = 200) -> JSONResponse:
 
 def _empty(status_code: int = 204) -> Response:
     return Response(status_code=status_code)
+
+
+AUTH_COOKIE = "access_token"
+
+
+def _account_json(account: accounts.Account) -> dict:
+    return {"userId": account.user_id, "storeId": account.store_id, "phoneNumber": account.phone_number}
+
+
+def _logged_in(deps: Container, account: accounts.Account, status_code: int) -> JSONResponse:
+    response = _json(_account_json(account), status_code)
+    response.set_cookie(
+        AUTH_COOKIE,
+        accounts.issue_token(deps, account),
+        max_age=int(accounts.TOKEN_LIFETIME.total_seconds()),
+        httponly=True,
+        secure=True,
+        samesite="none",
+    )
+    return response
+
+
+@router.post("/auth/signup", operation_id="signUp")
+async def sign_up(body: dto.CredentialsIn, deps: Deps):
+    return _logged_in(deps, await accounts.sign_up(deps, body.phoneNumber, body.password), 201)
+
+
+@router.post("/auth/login", operation_id="logIn")
+async def log_in(body: dto.CredentialsIn, deps: Deps):
+    return _logged_in(deps, await accounts.log_in(deps, body.phoneNumber, body.password), 200)
+
+
+@router.post("/auth/logout", operation_id="logOut")
+async def log_out():
+    response = _empty()
+    response.delete_cookie(AUTH_COOKIE, httponly=True, secure=True, samesite="none")
+    return response
+
+
+@router.get("/users/me", operation_id="getMe")
+async def get_me(deps: Deps, access_token: Annotated[str | None, Cookie()] = None):
+    user_id = accounts.verified_user_id(deps, access_token)
+    return _json(_account_json(await accounts.get_account(deps, user_id)))
 
 
 @router.post("/stores", operation_id="createStore")

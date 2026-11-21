@@ -43,6 +43,11 @@ class StoreCreateIn(BaseModel):
     businessHours: list[DayHoursIn]
 
 
+class CredentialsIn(BaseModel):
+    phoneNumber: Annotated[StrictStr, StringConstraints(pattern=r"^01[0-9]{8,9}$")]
+    password: Annotated[StrictStr, StringConstraints(min_length=8, max_length=128)]
+
+
 class PushTokenIn(BaseModel):
     token: StrictStr
 
