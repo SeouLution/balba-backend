@@ -45,7 +45,7 @@ class StoreCreateIn(BaseModel):
 
 class CredentialsIn(BaseModel):
     phoneNumber: Annotated[StrictStr, StringConstraints(pattern=r"^01[0-9]{8,9}$")]
-    password: Annotated[StrictStr, StringConstraints(min_length=8, max_length=128)]
+    password: Annotated[StrictStr, StringConstraints(min_length=4, max_length=128)]
 
 
 class PushTokenIn(BaseModel):

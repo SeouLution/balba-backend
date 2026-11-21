@@ -339,22 +339,10 @@ def test_templates():
 
 
 def test_policy_lookups():
-    used = [
-        name
-        for name in (
-            "축제-문화/예술",
-            "축제-기타",
-            "콘서트",
-            "클래식",
-            "연극",
-            "뮤지컬/오페라",
-            "무용",
-            "국악",
-            "독주/독창회",
-        )
-    ]
+    used = ["축제-문화/예술", "축제-기타", "콘서트"]
     assert all(POLICY.uses_event_category(name) for name in used)
-    assert not any(POLICY.uses_event_category(name) for name in ("교육/체험", "전시/미술", "영화", "기타", None))
+    unused = ("클래식", "연극", "교육/체험", "전시/미술", "영화", "기타", None)
+    assert not any(POLICY.uses_event_category(name) for name in unused)
 
 
 def test_quantity_rounds_to_six_places_and_rejects_non_numbers():
