@@ -23,6 +23,8 @@ MINIMAL_REQUESTS = {
     "recordSent": {"json": {"channel": "COPY"}},
     "saveOrderDays": {"json": {"items": []}},
     "createReceiptScan": {"files": [("images", ("1.jpg", JPEG_HEAD + b"{}", "image/jpeg"))]},
+    "createIngredient": {"json": {"name": "단무지", "unit": "g"}},
+    "createPurchase": {"json": {"ingredientId": "ing_x", "quantity": 1}},
 }
 PATH_VALUES = {
     "storeId": "st_missing",
@@ -49,7 +51,7 @@ def test_runtime_routes_match_openapi_one_to_one():
         for method, operation in item.items()
     }
     declared = {(method, "/v1" + path, operation_id) for operation_id, (method, path, _) in OPERATIONS.items()}
-    assert len(declared) == 26
+    assert len(declared) == 29
     assert runtime == declared
 
 

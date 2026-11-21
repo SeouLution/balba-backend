@@ -1,14 +1,14 @@
-"""26개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
+"""29개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, File, Request, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api import presenters
 from app.api import schemas as dto
 from app.bootstrap import Container
-from app.modules import accounts, catalog, forecasting, ordering, receipts, sales, stores, suppliers, views
+from app.modules import accounts, catalog, forecasting, inventory, ordering, receipts, sales, stores, suppliers, views
 from app.shared.types import DayHours, InternalFailure, NotFound, parse_hhmm
 
 router = APIRouter(prefix="/v1")
@@ -215,6 +215,25 @@ async def record_sent(storeId: str, purchaseOrderId: str, body: dto.SendRecordIn
 @router.get("/stores/{storeId}/ingredients", operation_id="listIngredients", dependencies=[OwnsStore])
 async def list_ingredients(storeId: str, deps: Deps):
     return _json(presenters.ingredient_list(await views.list_ingredients(deps, storeId)))
+
+
+@router.post("/stores/{storeId}/ingredients", operation_id="createIngredient", dependencies=[OwnsStore])
+async def create_ingredient(storeId: str, body: dto.IngredientCreateIn, deps: Deps):
+    return _json(presenters.ingredient(await catalog.create_ingredient(deps, storeId, body.name, body.unit)), 201)
+
+
+@router.post("/stores/{storeId}/purchases", operation_id="createPurchase", dependencies=[OwnsStore])
+async def create_purchase(storeId: str, body: dto.ManualPurchaseIn, deps: Deps):
+    lot, item = await receipts.record_manual_purchase(
+        deps, storeId, body.ingredientId, body.purchasedOn, body.quantity, body.isStockReset
+    )
+    return _json(presenters.manual_purchase(lot, item), 201)
+
+
+@router.get("/stores/{storeId}/stock", operation_id="getStock", dependencies=[OwnsStore])
+async def get_stock(storeId: str, deps: Deps, asOf: Annotated[dto.IsoDate | None, Query()] = None):
+    as_of, rows = await inventory.get_stock(deps, storeId, asOf)
+    return _json(presenters.stock_list(as_of, rows))
 
 
 @router.get("/stores/{storeId}/suppliers", operation_id="listSuppliers", dependencies=[OwnsStore])

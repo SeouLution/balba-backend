@@ -1,6 +1,6 @@
 """내부 스냅샷을 공개 응답으로 바꾼다. 필수·nullable·생략 규칙은 openapi.yaml을 따른다."""
 
-from app.modules import catalog, forecasting, ordering, receipts, sales, stores, suppliers, views
+from app.modules import catalog, forecasting, inventory, ordering, receipts, sales, stores, suppliers, views
 from app.shared import texts
 from app.shared.policy import Policy
 from app.shared.types import KST, MENU_UNIT, DayHours, hhmm, num
@@ -166,7 +166,8 @@ def forecast_adjustment(result: views.ForecastAdjustment, policy: Policy, today_
 def order_plan(plan: ordering.OrderPlanSnapshot) -> dict:
     groups: dict[str, dict] = {}
     for line in plan.lines:
-        group = groups.setdefault(line.supplier.id, {"supplier": _ref(line.supplier), "lines": []})
+        key = line.supplier.id if line.supplier else None
+        group = groups.setdefault(key, {"supplier": _ref(line.supplier) if line.supplier else None, "lines": []})
         group["lines"].append(
             {
                 "ingredient": _ref(line.ingredient),
@@ -229,3 +230,33 @@ def ingredient_list(view: views.IngredientListView) -> dict:
         body["supplier"] = _ref(row.supplier) if row.supplier else None
         items.append(body)
     return {"items": items}
+
+
+def ingredient(item: catalog.IngredientSnapshot) -> dict:
+    return {"id": item.id, "name": item.name, "unit": item.unit, "price": None, "supplier": None}
+
+
+def manual_purchase(lot: receipts.ReceiptLot, item: catalog.IngredientSnapshot) -> dict:
+    return {
+        "id": lot.receipt_line_id,
+        "ingredient": _ref(item),
+        "purchasedOn": lot.purchased_on.isoformat(),
+        "quantity": {"value": num(lot.quantity), "unit": item.unit},
+        "source": lot.source,
+        "isStockReset": lot.is_stock_reset,
+    }
+
+
+def stock_list(as_of, rows: list[tuple[catalog.IngredientSnapshot, inventory.InventorySnapshot]]) -> dict:
+    return {
+        "asOf": as_of.isoformat(),
+        "items": [
+            {
+                "ingredient": _ref(item),
+                "stock": None if snapshot.stock is None else {"value": num(snapshot.stock), "unit": item.unit},
+                "startedOn": snapshot.started_on.isoformat() if snapshot.started_on else None,
+                "warning": texts.MISSING_PURCHASE_WARNING if snapshot.missing_purchase else None,
+            }
+            for item, snapshot in rows
+        ],
+    }

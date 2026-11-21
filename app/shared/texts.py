@@ -157,3 +157,6 @@ def unreadable_lines_notice(purchased_on: date, supplier_name: str, line_count: 
 def push_message(slot: str, top_menu_name: str, planned: Decimal, menu_count: int) -> tuple[str, str]:
     title = "내일 준비량이 나왔어요" if slot == "NIGHT" else "오늘 미리 만들어둘 양"
     return title, f"{top_menu_name} {qty_text(planned)}{MENU_UNIT} 등 {menu_count}개 메뉴"
+
+
+MISSING_PURCHASE_WARNING = "입고 기록이 누락됐을 수 있어요"

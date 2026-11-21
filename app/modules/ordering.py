@@ -28,7 +28,7 @@ LOW_STOCK_SEARCH_DAYS = 14
 @dataclass(frozen=True)
 class OrderPlanningLine:
     ingredient: catalog.IngredientSnapshot
-    supplier: suppliers.SupplierSnapshot
+    supplier: suppliers.SupplierSnapshot | None
     quantity: Decimal
     unit: str
     stock: Decimal | None
@@ -47,7 +47,7 @@ class OrderPlanSnapshot:
 
     @property
     def supplier_count(self) -> int:
-        return len({line.supplier.id for line in self.lines})
+        return len({line.supplier.id for line in self.lines if line.supplier is not None})
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ def plan(
     orderable = [
         item
         for item in catalog_snapshot.ingredients
-        if item.id in latest_purchase and supplier_by_id[latest_purchase[item.id].supplier_id].orders_on(order_day)
+        if item.id not in latest_purchase or supplier_by_id[latest_purchase[item.id].supplier_id].orders_on(order_day)
     ]
 
     def need(planned_by_menu: dict[str, Decimal], ingredient_id: str) -> Decimal:
@@ -106,7 +106,7 @@ def plan(
         )
 
     def shortage(planned_by_menu: dict[str, Decimal], item: catalog.IngredientSnapshot) -> int:
-        stock = stock_by_ingredient[item.id].stock or Decimal(0)
+        stock = stock_by_ingredient[item.id].stock_for_planning
         return ceil_int(max(Decimal(0), need(planned_by_menu, item.id) - stock))
 
     planned = {item.menu.id: item.planned for item in forecasts}
@@ -115,24 +115,25 @@ def plan(
 
     lines, usual_lines = [], []
     for item in orderable:
-        fact = latest_purchase[item.id]
+        fact = latest_purchase.get(item.id)
+        price = fact.unit_price if fact else None
         quantity = shortage(planned, item)
-        usual_lines.append((Decimal(shortage(usual, item)), fact.unit_price))
+        usual_lines.append((Decimal(shortage(usual, item)), price))
         if quantity == 0:
             continue
         lines.append(
             OrderPlanningLine(
                 ingredient=item,
-                supplier=supplier_by_id[fact.supplier_id],
+                supplier=supplier_by_id[fact.supplier_id] if fact else None,
                 quantity=Decimal(quantity),
                 unit=item.unit,
                 stock=stock_by_ingredient[item.id].stock,
-                price=fact.unit_price,
+                price=price,
                 event_diff=Decimal(quantity - shortage(planned_without_event, item)),
-                product_name=fact.product_name,
+                product_name=fact.product_name if fact else item.name,
             )
         )
-    lines.sort(key=lambda line: (line.supplier.id, line.ingredient.id))
+    lines.sort(key=lambda line: (line.supplier is None, line.supplier.id if line.supplier else "", line.ingredient.id))
     return OrderPlanSnapshot(
         target_date=target_date,
         lines=tuple(lines),
@@ -153,7 +154,7 @@ async def plan_order(uow: UoW, deps: Container, ctx: StoreContext, target_date: 
     return plan(
         await catalog.snapshot(uow, store.id),
         await forecasting.read(uow, store.id, target_date),
-        await inventory.end_of(uow, store, target_date - timedelta(days=1)),
+        await inventory.end_of(uow, store, ctx.local_date),
         await receipts.latest(uow, store.id),
         {item.id: item for item in await suppliers.list_all(uow, store.id)},
         factor_events,
