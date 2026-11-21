@@ -31,8 +31,8 @@ receipts / `ConfirmReceiptScan.execute(StoreContext, ScanId, answers:List<{quest
 2. PROCESSING은 422, SCAN_RECEIPTS가 DEAD면 500. 이미 CONFIRMED면: body가 없거나 저장된 답과 같으면 204, 다른 답이면 422.
 3. NEEDS_REVIEW의 모든 질문에 하나씩 답이 있어야 한다. 모르는 questionId나 빠진 답은 422. 질문이 없으면 body 없이 진행한다.
 4. 가게 잠금 안에서 사진별 중복을 다시 판정한다(D22). 중복 사진은 안내만 남기고, 남은 사진에 대해서만 거래처를 이름으로 찾거나 만든다. 확인된 전화번호가 없는 거래처에만 영수증 번호와 날짜를 넣는다.
-5. 재료를 연결하거나 만든다(SAME → 후보 재료, DIFFERENT·신규 → 새 LATER 재료). 재료의 빈 구매 단위·환산 비율을 영수증 값으로 채운다. 확정 입고가 한 줄도 없는 재료는 기존 값이 레시피 초안의 추정값이므로, 영수증에 포장량이 적혀 있고 사용 단위로 환산할 수 있으면 영수증의 구매 단위와 포장량으로 교체한다(D30). 확정 입고가 있는 재료의 포장량 충돌과 환산할 수 없는 경우는 미정(U01)이며 기존 값을 유지한다. 구매 단위가 재료와 다른 줄은 빼고 '못 읽은 줄' 문구로 안내에 더한다(D31).
-6. 줄마다 receipt_line(supplier_id, purchased_on, ingredient_id, product_name, quantity, unit_price)을 만든다. 입고는 여기서만 생긴다.
+5. 재료를 연결하거나 만든다(SAME → 후보 재료, DIFFERENT·신규 → 새 LATER 재료). 새 재료의 단위는 그 줄의 단위(개 또는 g)다. 줄의 단위가 연결된 재료의 단위와 다르면 그 줄은 빼고 '못 읽은 줄' 문구로 안내에 더한다(D31).
+6. 줄마다 receipt_line(supplier_id, purchased_on, ingredient_id, product_name, quantity, unit_price)을 만든다. quantity는 재료 단위 입고량, unit_price는 `줄 금액 ÷ 입고량`이다(D49). 입고는 여기서만 생긴다.
 7. 확인된 요일이 없는 거래처의 주문 요일을 추정한다(D15).
 8. 사진별 비교값·반영 여부, 최종 그룹·안내, 답과 새로 만든 id를 `receipt_scan.result`에 저장하고 `status=CONFIRMED`로 바꾼다.
 9. 한 번에 commit하고 204. 모든 영수증이 중복이거나 읽지 못한 것이어서 입고가 0건이어도 CONFIRMED다.
@@ -43,4 +43,4 @@ receipts / `ConfirmReceiptScan.execute(StoreContext, ScanId, answers:List<{quest
 
 ## 완료 조건
 
-SAME/DIFFERENT, 생략 가능한 body, 모든 질문에 답해야 하는 것, 다른 scan의 질문, 두 번 confirm해도 입고 1회, 다른 scan으로 같은 영수증을 올린 경우, 같은 거래처·같은 날짜에 품목이 다른 두 영수증이 모두 반영되는 것, 구매 단위가 다른 줄 제외, 확인된 전화·요일 보존, 확정 뒤 재고·발주 조회에 입고가 반영되는 것을 검증한다.
+SAME/DIFFERENT, 생략 가능한 body, 모든 질문에 답해야 하는 것, 다른 scan의 질문, 두 번 confirm해도 입고 1회, 다른 scan으로 같은 영수증을 올린 경우, 같은 거래처·같은 날짜에 품목이 다른 두 영수증이 모두 반영되는 것, 재료와 단위가 다른 줄 제외, 확인된 전화·요일 보존, 확정 뒤 재고·발주 조회에 입고가 반영되는 것을 검증한다.

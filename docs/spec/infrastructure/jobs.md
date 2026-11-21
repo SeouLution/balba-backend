@@ -21,11 +21,21 @@
 | RECEIVED | PARSE_SALES 시작 | PARSING | 상태 전환 |
 | PARSING | 열 판별 성공 | NEEDS_CONFIRMATION | detection, pos_system, period, record_count |
 | NEEDS_CONFIRMATION | confirmSalesImport | APPLYING | APPLY_SALES 작업 |
-| APPLYING | APPLY_SALES 성공 | COMPLETED | menu, daily_sales, 판매가 + GENERATE_RECIPES(새 메뉴가 있을 때) + 오늘·내일 GENERATE_FORECAST |
+| APPLYING | APPLY_SALES 성공 | COMPLETED | menu, daily_sales + GENERATE_RECIPES(새 메뉴가 있을 때) + FIT_FORECAST_MODEL |
 
 APPLY_SALES는 저장된 detection의 열 매핑으로 파일을 다시 읽어 반영한다. 파싱 결과를 따로 저장하지 않는다. commit 전에 서버가 꺼지면 업무 변경은 없고 재시작 뒤 다시 실행된다. confirm 요청이 RECEIVED/PARSING이면 422, APPLYING/COMPLETED면 202 빈 body다.
 
 PARSE/APPLY 작업이 DEAD면 getSalesImport는 500이다(D07). 클라이언트는 500을 받으면 폴링을 멈추고 실패 화면을 보여줘야 한다.
+
+## 예측 모델 계산
+
+판매 반영이 끝나면 FIT_FORECAST_MODEL이 그 가게의 예측 모델을 다시 계산한다(D40, [C02](../domain/calculations.md)). 상태 컬럼은 없다.
+
+1. 가게의 판매 기록 날짜 중 `weather_observation` 행이 없는 날짜(어제까지)를 [과거 날씨](integrations.md)에서 받아 저장한다. 외부 호출은 store 잠금 밖에서 한다. 호출이 실패하면 이미 있는 관측 행만으로 계속한다. 관측 행이 없는 날은 날씨 경향 계산에서 빠질 뿐이다.
+2. 학습일 전체로 경향을 계산하고 가중치를 조절한다.
+3. store를 잠그고 `store.forecast_model`을 덮어쓴 뒤 오늘·내일 GENERATE_FORECAST(DATA_CHANGED)를 등록하고 SUCCEEDED를 기록한다. 셋은 같은 commit이다.
+
+다시 실행해도 같은 자료에서는 같은 모델이 나온다. 작업이 DEAD가 돼도 조회를 막지 않는다. 예측은 이전 모델(없으면 C02의 기본값)로 계속 만들고, 다음 판매 반영 때 다시 계산한다. 단, 이 경우 그 판매 반영에 따른 오늘·내일 예측 재계산은 등록되지 않으며 다음 정해진 시각(19:50, 07:20)의 예측에서 반영된다.
 
 ## 레시피 생성 상태
 
@@ -55,7 +65,7 @@ GENERATING 동안 setCoreIngredients와 saveRecipes는 422다. 작업이 DEAD면
 | 07:20 | 좌표와 메뉴가 있는 가게 | 오늘 REFRESH_CONTEXT(MORNING) → 끝나면 GENERATE_FORECAST(MORNING) |
 | 07:30 | push_token이 있고 오늘이 영업일인 가게 | 오늘 SEND_PUSH(MORNING) |
 
-- SEND_PUSH는 같은 가게·대상일·slot의 GENERATE_FORECAST가 SUCCEEDED일 때 그 작업의 푸시 문구를 보낸다. 이전 slot 예측만 있거나 해당 작업이 진행 중이면 1분 뒤로 최대 10회 미룬다. DEAD·문구 없음·대기 만료면 발송 없이 끝낸다. 지난 slot의 알림을 나중에 보내지 않는다.
+- SEND_PUSH는 같은 가게·대상일·slot의 GENERATE_FORECAST가 SUCCEEDED일 때 그 작업의 푸시 문구를 보낸다. NIGHT slot은 보내기 직전에 `ordering.FindLowStock(대상일)`을 계산해 아직 발주하지 않은 부족 재료가 있으면 body 끝에 발주 문구를 붙인다([C06·C07](../domain/calculations.md), D41). MORNING slot에는 붙이지 않는다. 이전 slot 예측만 있거나 해당 작업이 진행 중이면 1분 뒤로 최대 10회 미룬다. DEAD·문구 없음·대기 만료면 발송 없이 끝낸다. 지난 slot의 알림을 나중에 보내지 않는다.
 - REFRESH_CONTEXT는 날씨와 행사를 받아 weather, event에 저장한다. MORNING에서는 같은 대상일 NIGHT 예측 작업의 `nightReference.weatherText`와 새 문구를 C02대로 비교한다. DATA_CHANGED에서 새 날씨 문구가 달라지면 기존 change_text는 지운다. 외부 호출이 실패하면 기존 행을 그대로 두고 GENERATE_FORECAST는 그대로 등록한다.
 - GENERATE_FORECAST는 대상일의 모든 메뉴 예측을 다시 계산해 upsert한다(C02). `adjusted`, `produced`는 건드리지 않는다. 첫 예측 행이 생기면 같은 UoW에서 `StoreWriter.markFirstForecast`를 호출한다. NIGHT·MORNING의 기준값과 푸시 문구는 [작업 payload 계약](../02-boundary-contracts.md)에 따라 기록한다.
 - 가게 생성 때 GEOCODE_STORE를 등록하고, 좌표가 저장되면 오늘·내일 REFRESH_CONTEXT를 등록한다.
@@ -67,3 +77,5 @@ GENERATING 동안 setCoreIngredients와 saveRecipes는 422다. 작업이 DEAD면
 - 반영 commit 직전에 프로세스를 끝내도 상태와 업무 데이터가 어긋나지 않는다.
 - 3번 실패한 작업은 DEAD가 되고 해당 조회가 500을 돌려준다.
 - 같은 slot을 여러 번 확인해도 작업·푸시가 한 번만 등록된다. 휴무일에는 푸시를 보내지 않는다.
+- 판매 반영 → 예측 모델 계산 → 오늘·내일 예측이 차례로 등록된다. 과거 날씨 호출이 실패해도 모델이 저장되고 예측이 다시 만들어진다.
+- 부족 재료가 있는 가게의 NIGHT 푸시 body에만 발주 문구가 붙는다. 예측 문구가 없어 푸시를 보내지 않는 가게에는 재고 부족만으로 푸시를 보내지 않는다.

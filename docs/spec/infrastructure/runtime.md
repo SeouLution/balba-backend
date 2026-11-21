@@ -13,7 +13,7 @@
 | `ANTHROPIC_API_KEY` | 필수 | Claude API 키 |
 | `ANTHROPIC_MODEL` | 선택 | 기본 `claude-opus-5-5` |
 | `KAKAO_REST_API_KEY` | 필수 | 카카오 로컬 API |
-| `KMA_SERVICE_KEY` | 필수 | 기상청 단기예보(공공데이터포털) |
+| `KMA_SERVICE_KEY` | 필수 | 기상청 단기예보와 지상(종관, ASOS) 일자료(공공데이터포털). 두 서비스 모두 활용신청이 필요하다 |
 | `SEOUL_OPENAPI_KEY` | 필수 | 서울 열린데이터광장(문화행사, 실시간 도시데이터) |
 | `SEOUL_CITYDATA_KEY` | 선택 | 실시간 도시데이터에 별도 키가 필요할 때만 |
 | `VAPID_PRIVATE_KEY`, `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT` | 필수 | 웹 푸시. subject는 `mailto:` 주소 |
@@ -45,4 +45,4 @@ DEAD 작업, 오래 GENERATING/PARSING/PROCESSING에 머무는 가게, 500 응�
 
 ## 완료의 구분
 
-MVP 완료는 25개 operation, 재시작해도 이어지는 비동기 작업, 계산 규칙, 실제 외부 연동, 계약 테스트, 기존 배포 경로가 동작하는 상태다. 사용자 인증, 판매의 지속 수집, 재고 실사, 단위 정정 화면, 실패 재시도 API는 범위 밖이다([공개 계약이 표현하지 못하는 것](../00-scope-and-decisions.md)).
+MVP 완료는 가게 API 22개 operation, 재시작해도 이어지는 비동기 작업, 계산 규칙, 실제 외부 연동, 계약 테스트, 기존 배포 경로가 동작하는 상태다. 사용자 인증, 판매의 지속 수집, 재고 실사, 단위 정정 화면, 실패 재시도 API는 범위 밖이다([공개 계약이 표현하지 못하는 것](../00-scope-and-decisions.md)).

@@ -29,8 +29,8 @@ views / `ListIngredients.execute(StoreContext, status:CORE|LATER?) → Ingredien
 
 1. store를 확인한다. `counts`는 필터와 관계없이 이 가게 전체의 CORE/LATER 수다.
 2. status가 있으면 items만 거른다. 정렬은 CORE 먼저, 그 안에서 쓰이는 메뉴 수 내림차순, ingredientId 순(1.4 후보와 같은 순서).
-3. `usageUnit`을 모르면 키를 생략한다. 구매 단위 이름이 없으면 `purchaseUnit=null`, 이름은 있고 환산 비율이 없으면 `{label, contentQuantity:null}`. 영수증 전에는 레시피 초안이 추정한 값이 들어 있다.
-4. 확정된 영수증 줄이 없는 재료는 `price=null`, `supplier=null`. 줄은 있는데 단가가 없으면 `price={unitPrice:null}`이고 supplier는 그 줄의 거래처다(C03).
+3. `unit`은 재료 단위(`개` 또는 `g`)이고 항상 있다(D47). 구매 단위와 환산 비율은 내보내지 않는다.
+4. 확정된 영수증 줄이 없는 재료는 `price=null`, `supplier=null`. 줄은 있는데 단가가 없으면 `price={unitPrice:null}`이고 supplier는 그 줄의 거래처다(C03). `unitPrice`는 재료 단위 1개당 원이며 소수일 수 있다(D49).
 5. 200 `{items, counts:{core, later}}`. 남은 일수 필드는 스키마에 없으므로 넣지 않는다.
 
 ## 완료 조건

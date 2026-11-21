@@ -9,6 +9,7 @@ Table store {
   push_token text
   generation_status text [not null, default: 'GENERATING', note: 'GENERATING | READY']
   first_forecast_at timestamptz [note: '첫 예측이 만들어진 시각. FIRST_FORECAST 배너를 그날 홈에만 띄움']
+  forecast_model json [note: '가게별 예측 모델. weights(요일·날씨 가중치), weekdayIndex(요일 경향), weatherIndex(메뉴별 기온·강수 경향), holdoutError, tunedDays, fittedAt. 판매 반영 뒤 다시 계산해 덮어씀']
   created_at timestamptz [not null, default: `now()`]
 }
 
@@ -16,12 +17,12 @@ Table menu {
   id text [pk]
   store_id text [not null, ref: > store.id]
   name text [not null]
-  unit text [not null, note: '줄, 인분']
-  price int [note: '엑셀 금액 ÷ 수량']
 
   indexes {
     (store_id, name) [unique]
   }
+
+  Note: '메뉴 수량 단위는 모두 인분'
 }
 
 Table ingredient {
@@ -29,9 +30,7 @@ Table ingredient {
   store_id text [not null, ref: > store.id]
   name text [not null]
   status text [not null, default: 'LATER', note: 'CORE | LATER']
-  usage_unit text [note: '개']
-  purchase_unit text [note: '판']
-  content_quantity numeric [note: '구매 단위 1개에 든 사용 단위 수량 (1판 = 30개)']
+  unit text [not null, note: '개 | g. 레시피 · 재고 · 입고 · 발주 수량이 모두 이 단위']
   tags json [not null, default: '[]', note: 'RECOMMENDED | EXPENSIVE 배열']
 
   indexes {
@@ -42,7 +41,7 @@ Table ingredient {
 Table recipe_item {
   menu_id text [not null, ref: > menu.id]
   ingredient_id text [not null, ref: > ingredient.id]
-  quantity numeric [not null, note: '메뉴 1단위당 사용량 (재료 사용 단위)']
+  quantity numeric [not null, note: '메뉴 1인분당 사용량 (재료 단위)']
 
   indexes {
     (menu_id, ingredient_id) [pk]
@@ -55,7 +54,7 @@ Table sales_import {
   status text [not null, default: 'RECEIVED', note: 'RECEIVED | PARSING | NEEDS_CONFIRMATION | APPLYING | COMPLETED']
   file_path text [not null, note: 'confirm 이후 반영에 필요']
   pos_system text [note: 'TOSS_POS | OKPOS | BAEMIN_POS | OTHER']
-  detection json [note: 'menuCount, columnMapping(+금액 열), preview']
+  detection json [note: 'menuCount, columnMapping, preview']
   period_from date
   period_to date
   record_count int
@@ -102,8 +101,8 @@ Table receipt_line {
   purchased_on date [not null]
   ingredient_id text [not null, ref: > ingredient.id]
   product_name text [not null, note: '영수증에 적힌 품명 (계란 특란 30구). 발주 문구 · 같은 재료 판별용']
-  quantity numeric [not null, note: '입고량 (구매 단위)']
-  unit_price int [note: '구매 단위당 원']
+  quantity numeric [not null, note: '입고량 (재료 단위). 영수증의 포장량 × 수량을 개 또는 g으로 환산한 값']
+  unit_price numeric [note: '재료 단위 1개(1개 또는 1g)당 원. 영수증 줄 금액 ÷ 입고량']
 
   Note: '영수증 1장 = 같은 supplier_id · purchased_on 묶음. 재료의 현재 단가 · 거래처는 purchased_on이 가장 늦은 줄. 남은 재고의 입고는 이 테이블만 계산'
 }
@@ -112,12 +111,12 @@ Table forecast {
   menu_id text [not null, ref: > menu.id]
   target_date date [not null]
   recommended numeric [not null]
-  baseline numeric [not null, note: '지난 4주 같은 요일 평균']
+  baseline numeric [not null, note: '평소 수준. 최근 판매 수준 × 요일 경향']
   event_diff numeric [not null, default: 0]
   summary_text text
   previous_recommended numeric [note: '전날 밤 추천량과 달라졌을 때의 이전 값']
   adjusted numeric [note: '사장님이 고친 값']
-  produced numeric [note: '만든 양']
+  produced numeric [note: '만든 양. 화면 표시용이며 계산에 쓰지 않음']
 
   indexes {
     (menu_id, target_date) [pk]
@@ -135,6 +134,16 @@ Table weather {
   indexes {
     (store_id, target_date) [pk]
   }
+
+  Note: '대상일 예보. 홈 표시와 대상일 예측에 씀'
+}
+
+Table weather_observation {
+  observed_on date [pk]
+  max_temperature_c numeric [not null, note: '일 최고기온']
+  precipitation_mm numeric [not null, note: '일 강수량. 비가 오지 않은 날은 0']
+
+  Note: '서울 관측 지점 1곳의 과거 일별 관측값. 가게와 무관한 공통 자료. 예측 모델 계산에만 씀'
 }
 
 Table event {
@@ -166,7 +175,7 @@ Table purchase_order {
 Table purchase_order_line {
   purchase_order_id text [not null, ref: > purchase_order.id]
   ingredient_id text [not null, ref: > ingredient.id]
-  quantity numeric [not null, note: '구매 단위']
+  quantity numeric [not null, note: '재료 단위']
 
   indexes {
     (purchase_order_id, ingredient_id) [pk]
@@ -175,23 +184,9 @@ Table purchase_order_line {
   Note: '입고로 계산하지 않음. 입고 예정 안내 문구용'
 }
 
-Table discount {
-  id text [pk]
-  menu_id text [not null, ref: > menu.id]
-  discount_type text [not null, note: 'PERCENT | AMOUNT']
-  discount_value numeric [not null]
-  start_time time [not null]
-  quantity numeric [not null]
-  original_price int [not null]
-  waste_cost_avoided int
-  revenue_reduction int
-  promo_text text
-  created_at timestamptz [not null, default: `now()`, note: '할인 날짜는 이 값의 한국 날짜']
-}
-
 Table background_job {
   id text [pk]
-  kind text [not null, note: 'GEOCODE_STORE | PARSE_SALES | APPLY_SALES | GENERATE_RECIPES | SCAN_RECEIPTS | REFRESH_CONTEXT | GENERATE_FORECAST | SEND_PUSH']
+  kind text [not null, note: 'GEOCODE_STORE | PARSE_SALES | APPLY_SALES | GENERATE_RECIPES | SCAN_RECEIPTS | FIT_FORECAST_MODEL | REFRESH_CONTEXT | GENERATE_FORECAST | SEND_PUSH']
   payload json [not null, note: '대상 store_id · import_id · scan_id · target_date 등']
   dedupe_key text [not null, unique, note: '같은 작업이 두 번 등록되지 않게 하는 키']
   state text [not null, default: 'READY', note: 'READY | RUNNING | SUCCEEDED | DEAD']
@@ -201,7 +196,7 @@ Table background_job {
   created_at timestamptz [not null, default: `now()`]
   finished_at timestamptz
 
-  Note: '엑셀 반영 · 영수증 읽기 · 예측 · 푸시 같은 비동기 작업. 서버가 재시작돼도 끝나지 않은 작업을 이어서 실행'
+  Note: '엑셀 반영 · 영수증 읽기 · 예측 모델 계산 · 예측 · 푸시 같은 비동기 작업. 서버가 재시작돼도 끝나지 않은 작업을 이어서 실행'
 }
 
 Table app_user {

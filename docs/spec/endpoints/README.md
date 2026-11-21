@@ -1,11 +1,11 @@
 # 엔드포인트 구현 인덱스
 
-OpenAPI의 25개 operation과 1:1 대응한다. 각 파일은 공개 계약, 모듈 경계, 처리 순서, 원자성/실패, 완료 조건을 정의한다. `/health`, `/openapi.yaml`, `/scalar`는 별도의 [기반 유지 조건](../infrastructure/runtime.md)이다.
+OpenAPI의 가게 API 22개 operation과 1:1 대응한다(계정 4개 제외). 각 파일은 공개 계약, 모듈 경계, 처리 순서, 원자성/실패, 완료 조건을 정의한다. `/health`, `/openapi.yaml`, `/scalar`는 별도의 [기반 유지 조건](../infrastructure/runtime.md)이다.
 
 | operationId / 상세 명세 | Method | 경로 | 화면 / 목적 |
 |---|---|---|---|
 | [createStore](createStore.md) | POST | `/stores` | 1.1 가게 정보 저장 |
-| [putPushToken](putPushToken.md) | PUT | `/stores/{storeId}/push-token` | 푸시 토큰 등록 (전날 밤 20:00 · 아침 07:30 알림) |
+| [putPushToken](putPushToken.md) | PUT | `/stores/{storeId}/push-token` | 푸시 토큰 등록 (전날 밤 20:00 준비량 · 재고 부족 알림, 아침 07:30 알림) |
 | [listIngredientCandidates](listIngredientCandidates.md) | GET | `/stores/{storeId}/ingredient-candidates` | 1.4 핵심 재료 고르기 |
 | [setCoreIngredients](setCoreIngredients.md) | PUT | `/stores/{storeId}/core-ingredients` | 1.4 핵심 재료 확정 ('N개로 시작하기') |
 | [listRecipes](listRecipes.md) | GET | `/stores/{storeId}/recipes` | 1.6 레시피 초안 |
@@ -26,9 +26,6 @@ OpenAPI의 25개 operation과 1:1 대응한다. 각 파일은 공개 계약, 모
 | [createReceiptScan](createReceiptScan.md) | POST | `/stores/{storeId}/receipt-scans` | 1.5 · 3.5 '다 찍었어요' (여러 장 한 번에) |
 | [getReceiptScan](getReceiptScan.md) | GET | `/stores/{storeId}/receipt-scans/{scanId}` | 3.6 거래처별 자동 분류 |
 | [confirmReceiptScan](confirmReceiptScan.md) | POST | `/stores/{storeId}/receipt-scans/{scanId}/confirm` | 3.6 '저장' |
-| [getDiscountRecommendations](getDiscountRecommendations.md) | GET | `/stores/{storeId}/discount-recommendations` | 4.0 할인 탭 상단 카드 · 4.0-2 할인 추천 목록 |
-| [listDiscounts](listDiscounts.md) | GET | `/stores/{storeId}/discounts` | 4.0 할인 기록 (오늘 · 이번 주 · 전체) |
-| [createDiscount](createDiscount.md) | POST | `/stores/{storeId}/discounts` | 4.1 '문구 만들기' (dryRun=true면 기대 절감만 계산) |
 
 ## 공통 선행 문서
 
