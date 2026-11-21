@@ -57,7 +57,7 @@ class IngredientListView:
 
 
 def order_summary(plan: ordering.OrderPlanSnapshot) -> OrderSummary | None:
-    return OrderSummary(plan.supplier_count, plan.total) if plan.lines else None
+    return OrderSummary(plan.supplier_count, plan.total) if plan.supplier_count else None
 
 
 def resolve_view(ctx: StoreContext, deps: Container) -> tuple[str, date]:
