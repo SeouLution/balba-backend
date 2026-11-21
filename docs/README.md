@@ -27,6 +27,6 @@
 
 ## 현재 상태
 
-2026-11-19 기준 저장소에는 FastAPI 실행 기반과 `/health`, `/openapi.yaml`, `/scalar`만 구현되어 있다. PDF, OpenAPI, ERD, Figma(TASK 1~4 화면)를 모두 확인했다.
+2026-11-20 기준 25개 operation, Alembic migration, 작업 루프, 외부 연동 adapter와 테스트가 구현되어 있다. 외부 연동 중 카카오 주소 검색, 기상청 단기예보, 서울 문화행사·실시간 도시데이터는 실제 키로 호출해 확인했다. Claude API와 웹 푸시 발송은 실제 호출로 확인하지 못했다. PDF, OpenAPI, ERD, Figma(TASK 1~4 화면)를 모두 확인했다.
 
 이 명세로 만드는 것은 시연용 MVP다. 사용자 인증, 판매의 지속 수집, 재고 실사, 실패 재시도 API는 원본에 없으므로 범위 밖이다.

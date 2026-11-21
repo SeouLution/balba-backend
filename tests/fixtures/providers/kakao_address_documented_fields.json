@@ -1,0 +1,11 @@
+{
+  "meta": {"total_count": 4, "pageable_count": 4, "is_end": true},
+  "documents": [
+    {
+      "address_name": "전북 익산시 부송동 100",
+      "address_type": "REGION_ADDR",
+      "x": "126.99597295767953",
+      "y": "35.97664845766847"
+    }
+  ]
+}
