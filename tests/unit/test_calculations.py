@@ -28,9 +28,9 @@ def menu(menu_id="m1", name="김밥", unit="줄", price=4000) -> catalog.MenuSna
     return catalog.MenuSnapshot(menu_id, "st", name, unit, price)
 
 
-def ingredient(ingredient_id="egg", name="계란", content=30, shelf=21, status="CORE", unit="개", purchase="판"):
+def ingredient(ingredient_id="egg", name="계란", content=30, status="CORE", unit="개", purchase="판"):
     return catalog.IngredientSnapshot(
-        ingredient_id, "st", name, status, unit, purchase, Decimal(content) if content else None, shelf, ()
+        ingredient_id, "st", name, status, unit, purchase, Decimal(content) if content else None, ()
     )
 
 
@@ -159,9 +159,7 @@ def stock_on(as_of: date, usage=(), sold=None, lots=None):
 
 
 def test_f02_stock_after_recorded_sales():
-    snapshot = stock_on(date(2026, 11, 9))
-    assert snapshot.stock == 15
-    assert snapshot.remaining_lots[0].expires_on == date(2026, 11, 28)
+    assert stock_on(date(2026, 11, 9)).stock == 15
 
 
 def test_f02_day_without_sales_uses_produced_then_planned():
@@ -180,13 +178,13 @@ def test_f02_day_without_forecast_uses_weekday_average_or_unknown():
     assert stock_on(tuesday, sold=with_history).stock == 8
 
 
-def test_f02_usage_above_stock_floors_at_zero_and_expired_lot_leaves():
+def test_f02_usage_above_stock_floors_at_zero_and_old_stock_stays():
     heavy = sales.SalesSnapshot((("m1", date(2026, 11, 8), Decimal(100)),), ((date(2026, 11, 8), date(2026, 11, 9)),))
     assert stock_on(date(2026, 11, 9), sold=heavy).stock == 0
-    short = catalog.CatalogSnapshot("st", (GIMBAP,), (ingredient(shelf=2),), EGG_RECIPE.recipe_lines)
-    quiet = sales.SalesSnapshot((), ((date(2026, 11, 8), date(2026, 11, 12)),))
-    assert inventory.evaluate(short, quiet, [], [lot()], OPEN_HOURS, date(2026, 11, 9))["egg"].stock == 60
-    assert inventory.evaluate(short, quiet, [], [lot()], OPEN_HOURS, date(2026, 11, 10))["egg"].stock == 0
+    refilled = [lot(), lot(line_id=2, day=date(2026, 11, 9), packs=1)]
+    assert stock_on(date(2026, 11, 9), sold=heavy, lots=refilled).stock == 30
+    quiet = sales.SalesSnapshot((), ((date(2026, 11, 8), date(2026, 12, 31)),))
+    assert stock_on(date(2026, 12, 31), sold=quiet).stock == 60
 
 
 def test_stock_is_unknown_without_conversion_or_receipt():
@@ -212,15 +210,13 @@ def plan(forecasts, stock, target_supplier=None, order_day="TUE", price=8900):
     fact = receipts.LatestPurchaseFact("egg", "s1", "계란 특란 30구", price, date(2026, 11, 8), 1)
     target_supplier = target_supplier or supplier()
     return ordering.plan(
-        EGG_RECIPE, forecasts, {"egg": stock}, {"egg": fact}, {"s1": target_supplier}, (), order_day, WED, POLICY
+        EGG_RECIPE, forecasts, {"egg": stock}, {"egg": fact}, {"s1": target_supplier}, (), order_day, WED
     )
 
 
-def known_stock(remaining: int | None, expires_on=date(2026, 11, 28)) -> inventory.InventorySnapshot:
-    if remaining is None:
-        return inventory.InventorySnapshot("egg", date(2026, 11, 10), None, ())
-    lots = (inventory.RemainingLot(lot(), Decimal(remaining), expires_on),) if remaining else ()
-    return inventory.InventorySnapshot("egg", date(2026, 11, 10), Decimal(remaining), lots)
+def known_stock(remaining: int | None) -> inventory.InventorySnapshot:
+    stock = None if remaining is None else Decimal(remaining)
+    return inventory.InventorySnapshot("egg", date(2026, 11, 10), stock)
 
 
 def test_f02_order_packs_round_up_and_event_diff():
@@ -259,101 +255,96 @@ def test_money_total_adds_only_known_prices():
     assert plan([forecast_row(75)], known_stock(15), price=None).total is None
 
 
-@pytest.mark.parametrize(("expiring", "reduced"), [(1, False), (2, True)])
-def test_a05_order_reduction_needs_fewer_packs(expiring, reduced):
-    result = plan([forecast_row(32)], known_stock(expiring, expires_on=WED))
-    assert (result.reduced_ingredient_ids == ("egg",)) is reduced
-    assert plan([forecast_row(32)], known_stock(expiring, expires_on=WED), order_day="WED").reduced_ingredient_ids == ()
-
-
-def test_reduction_counts_a_line_that_disappears():
-    result = plan([forecast_row(30)], known_stock(30, expires_on=WED))
-    assert result.lines == () and result.reduced_ingredient_ids == ("egg",)
-
-
 # ───────── F03 할인 ─────────
 
 TODAY = date(2026, 11, 11)
 TTEOK = menu("m_tteok", "떡볶이", "인분", 5000)
 TANG = menu("m_tang", "어묵탕", "인분", 6000)
-FISHCAKE = ingredient("fish", "어묵", content=1000, shelf=3, unit="g", purchase="봉")
+FISHCAKE = ingredient("fish", "어묵", content=1000, unit="g", purchase="봉")
+RICE_CAKE = ingredient("rice", "떡", content=1000, unit="g", purchase="kg")
+RADISH = ingredient("radish", "무", content=None, unit="g", purchase=None)
 
 
-def stock_today(expiring=Decimal(1000), stock=None, price=9000, menus=(TTEOK, TANG), uses=None) -> discounts.StockToday:
-    lines = uses or (
+def recipe_costs(fish_price=18000, rice_price=None) -> discounts.RecipeCosts:
+    """떡볶이 1인분 = 어묵 100g + 떡 200g + 무 50g. 어묵 1봉(1,000g) 18,000원이면 어묵 원가는 1,800원."""
+    lines = (
         catalog.RecipeLine("m_tteok", "fish", Decimal(100)),
+        catalog.RecipeLine("m_tteok", "rice", Decimal(200)),
+        catalog.RecipeLine("m_tteok", "radish", Decimal(50)),
         catalog.RecipeLine("m_tang", "fish", Decimal(200)),
     )
-    fact = receipts.LatestPurchaseFact("fish", "s1", "부산어묵", price, TODAY, 1)
-    return discounts.StockToday(
-        catalog.CatalogSnapshot("st", menus, (FISHCAKE,), lines),
-        {"fish": fact},
-        {"fish": expiring if stock is None else stock},
-        {"fish": expiring} if expiring else {},
+    facts = {
+        "fish": receipts.LatestPurchaseFact("fish", "s1", "부산어묵", fish_price, TODAY, 1),
+        "rice": receipts.LatestPurchaseFact("rice", "s1", "떡볶이떡", rice_price, TODAY, 2),
+        "radish": receipts.LatestPurchaseFact("radish", "s1", "무", 2000, TODAY, 3),
+    }
+    return discounts.RecipeCosts(
+        catalog.CatalogSnapshot("st", (TTEOK, TANG), (FISHCAKE, RICE_CAKE, RADISH), lines), facts
     )
+
+
+def made_row(target_menu, recommended=50, adjusted=None, produced=None) -> forecasting.ForecastSnapshot:
+    return forecasting.ForecastSnapshot(
+        target_menu,
+        TODAY,
+        Decimal(recommended),
+        Decimal(recommended),
+        None if adjusted is None else Decimal(adjusted),
+        None if produced is None else Decimal(produced),
+        Decimal(0),
+        None,
+        None,
+    )
+
+
+def recommend(rows, costs=None):
+    return discounts.recommend(rows, costs or recipe_costs(), time(19), TODAY, POLICY)
 
 
 def test_f03_manual_discount_amounts():
     payload = discounts.DiscountInput("m_tteok", "PERCENT", Decimal(10), time(19), Decimal(5))
-    result = discounts.evaluate(payload, TTEOK, stock_today(), TODAY)
+    result = discounts.evaluate(payload, TTEOK, recipe_costs(), TODAY)
     assert (result.discounted_price, result.revenue_reduction) == (4500, 2500)
-    assert result.waste_cost_avoided == 4500
+    assert result.waste_cost_avoided == 9000
     assert result.promo_text == "갓 만든 떡볶이, 마감 전에 할인해요"
     amount = discounts.evaluate(
-        discounts.DiscountInput("m_tteok", "AMOUNT", Decimal(700), time(19), Decimal(3)), TTEOK, stock_today(), TODAY
+        discounts.DiscountInput("m_tteok", "AMOUNT", Decimal(700), time(19), Decimal(3)), TTEOK, recipe_costs(), TODAY
     )
     assert (amount.discounted_price, amount.revenue_reduction) == (4300, 2100)
 
 
-def test_f03_unknown_price_omits_waste_cost_and_drops_recommendation():
+def test_f03_unit_cost_adds_only_ingredients_with_known_price_and_conversion():
+    assert recipe_costs().menu_unit_cost("m_tteok") == 1800
+    assert recipe_costs(rice_price=5000).menu_unit_cost("m_tteok") == 2800
+    assert recipe_costs(fish_price=None).menu_unit_cost("m_tteok") is None
+
+
+def test_f03_unknown_cost_omits_waste_cost_and_drops_recommendation():
     payload = discounts.DiscountInput("m_tteok", "PERCENT", Decimal(10), time(19), Decimal(5))
-    assert discounts.evaluate(payload, TTEOK, stock_today(price=None), TODAY).waste_cost_avoided is None
-    assert discounts.recommend(stock_today(price=None), time(19), TODAY, POLICY) == ([], set())
+    unknown = recipe_costs(fish_price=None)
+    assert discounts.evaluate(payload, TTEOK, unknown, TODAY).waste_cost_avoided is None
+    assert recommend([made_row(TTEOK, produced=55)], unknown) == []
 
 
-def test_f03_two_menus_share_expiring_stock_once():
-    chosen, discounted = discounts.recommend(stock_today(expiring=Decimal(1000), price=90000), time(19), TODAY, POLICY)
-    assert [(item.evaluation.menu.id, item.evaluation.quantity) for item in chosen] == [("m_tang", 5)]
-    assert chosen[0].id == "rec_2026-11-11_m_tang"
-    assert chosen[0].reason_text == "어묵이 많이 들어가요"
-    assert chosen[0].expected_savings == 90000 - 9000
-    assert discounted == {"fish"}
-
-    base = stock_today(price=90000)
-    limited = discounts.StockToday(
-        catalog.CatalogSnapshot(
-            "st",
-            (TTEOK, TANG),
-            (
-                FISHCAKE,
-                ingredient("rice", "떡", content=1000, shelf=None, unit="g", purchase="kg"),
-                ingredient("radish", "무", content=1000, shelf=None, unit="g", purchase="kg"),
-            ),
-            (
-                catalog.RecipeLine("m_tteok", "fish", Decimal(100)),
-                catalog.RecipeLine("m_tteok", "rice", Decimal(200)),
-                catalog.RecipeLine("m_tang", "fish", Decimal(200)),
-                catalog.RecipeLine("m_tang", "radish", Decimal(200)),
-            ),
-        ),
-        base.latest_purchase,
-        {"fish": Decimal(1000), "rice": Decimal(600), "radish": Decimal(600)},
-        {"fish": Decimal(1000)},
-    )
-    both, _ = discounts.recommend(limited, time(19), TODAY, POLICY)
-    assert [(item.evaluation.menu.id, item.evaluation.quantity) for item in both] == [("m_tang", 3), ("m_tteok", 3)]
-    assert [item.evaluation.waste_cost_avoided for item in both] == [54000, 27000]
-    assert sum(item.evaluation.waste_cost_avoided for item in both) <= discounts.waste_cost(
-        {"fish": Decimal(1000)}, limited
-    )
-    assert limited.expiring_today == {"fish": Decimal(1000)}
+def test_f03_recommends_only_what_was_made_above_the_recommended_quantity():
+    assert recommend([made_row(TTEOK)]) == []
+    assert recommend([made_row(TTEOK, adjusted=58, produced=0)]) == []
+    [recorded] = recommend([made_row(TTEOK, produced=55)])
+    assert (recorded.id, recorded.evaluation.quantity) == ("rec_2026-11-11_m_tteok", 5)
+    assert recorded.reason_text == "예상보다 5인분 더 만들었어요"
+    assert (recorded.evaluation.waste_cost_avoided, recorded.evaluation.revenue_reduction) == (9000, 7500)
+    assert recorded.expected_savings == 1500
+    [adjusted] = recommend([made_row(TTEOK, adjusted=58)])
+    assert adjusted.evaluation.quantity == 8
 
 
-def test_f03_zero_usage_or_non_positive_savings_is_not_recommended():
-    zero_use = stock_today(uses=(catalog.RecipeLine("m_tteok", "fish", Decimal(0)),), menus=(TTEOK,))
-    assert discounts.recommend(zero_use, time(19), TODAY, POLICY)[0] == []
-    cheap = stock_today(price=10)
-    assert discounts.recommend(cheap, time(19), TODAY, POLICY)[0] == []
+def test_f03_orders_by_savings_and_drops_non_positive_savings():
+    rows = [made_row(TTEOK, produced=55), made_row(TANG, produced=52)]
+    assert [item.evaluation.menu.id for item in recommend(rows)] == ["m_tang", "m_tteok"]
+    assert recommend(rows, recipe_costs(fish_price=8000)) == []
+    assert discounts.recommend(rows, recipe_costs(), None, TODAY, POLICY) == []
+    no_price = menu("m_free", "서비스 떡볶이", "인분", None)
+    assert recommend([made_row(no_price, produced=55)]) == []
 
 
 def test_f03_recommended_start_time():
@@ -391,12 +382,7 @@ def test_templates():
     assert texts.josa("떡볶이", "을", "를") == "떡볶이를"
     assert texts.overnight_change_title("김밥", Decimal(-2), "줄") == "밤사이 예보가 바뀌어 김밥을 2줄 줄였어요"
     assert texts.overnight_change_title(None, Decimal(0), "") == "밤사이 날씨 예보가 바뀌었어요"
-    assert texts.price_changed_alert("계란", 7900, 8900) == (
-        "계란 단가가 올랐어요",
-        "계란 단가가 7,900원 → 8,900원으로 올랐어요 (+13%)",
-    )
-    assert texts.expiry_alert("어묵", True)[0] == "어묵 오늘까지 · 할인 추천이 있어요"
-    assert texts.expiry_alert("어묵", False)[0] == "어묵 오늘까지"
+    assert texts.discount_reason(Decimal(5), "인분") == "예상보다 5인분 더 만들었어요"
     assert texts.delivery_expected_banner(
         [("계란", Decimal(3), "판"), ("김", Decimal(2), "속"), ("떡", Decimal(5), "kg"), ("무", Decimal(1), "개")]
     ) == (
@@ -439,13 +425,10 @@ def test_templates():
 def test_policy_lookups():
     assert POLICY.menu_unit_for("참치김밥") == "줄"
     assert POLICY.menu_unit_for("아메리카노") == "개"
-    assert POLICY.shelf_life_for("계란") == 21
-    assert POLICY.shelf_life_for("국산 돼지고기 앞다리") == 4
-    assert POLICY.shelf_life_for("참기름") is None
-    assert POLICY.tags_for("어묵", 3, 1) == ["RECOMMENDED", "SHORT_SHELF_LIFE"]
-    assert POLICY.tags_for("치즈", 30, 1) == ["RECOMMENDED", "EXPENSIVE"]
-    assert POLICY.tags_for("단무지", 30, 3) == ["RECOMMENDED"]
-    assert POLICY.tags_for("단무지", 30, 2) == []
+    assert POLICY.tags_for("어묵", 1) == []
+    assert POLICY.tags_for("치즈", 1) == ["RECOMMENDED", "EXPENSIVE"]
+    assert POLICY.tags_for("단무지", 3) == ["RECOMMENDED"]
+    assert POLICY.tags_for("단무지", 2) == []
     used = [
         name
         for name in (

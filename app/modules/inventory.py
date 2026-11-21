@@ -8,34 +8,12 @@ from app.shared.types import DayHours, hours_for
 
 
 @dataclass(frozen=True)
-class RemainingLot:
-    lot: receipts.ReceiptLot
-    remaining: Decimal
-    expires_on: date | None
-
-
-@dataclass(frozen=True)
 class InventorySnapshot:
     """asOf 영업이 끝났을 때 남는 양(사용 단위). 계산할 수 없으면 stock이 None이다."""
 
     ingredient_id: str
     as_of: date
     stock: Decimal | None
-    remaining_lots: tuple[RemainingLot, ...]
-
-    def expiring_between(self, start: date, end: date) -> Decimal:
-        return sum(
-            (item.remaining for item in self.remaining_lots if item.expires_on and start <= item.expires_on <= end),
-            Decimal(0),
-        )
-
-    def usable_on(self, day: date) -> Decimal | None:
-        if self.stock is None:
-            return None
-        return sum(
-            (item.remaining for item in self.remaining_lots if item.expires_on is None or item.expires_on >= day),
-            Decimal(0),
-        )
 
 
 def evaluate(
@@ -66,55 +44,34 @@ def evaluate(
 
     result = {}
     for ingredient in catalog_snapshot.ingredients:
-        own_lots = sorted(
-            lots_by_ingredient.get(ingredient.id, []), key=lambda lot: (lot.purchased_on, lot.receipt_line_id)
-        )
+        own_lots = lots_by_ingredient.get(ingredient.id, [])
         recipe_uses = [
             line for line in catalog_snapshot.recipe_lines if line.ingredient_id == ingredient.id and line.quantity > 0
         ]
-        remaining = _simulate(ingredient, own_lots, recipe_uses, menu_quantity, as_of)
-        result[ingredient.id] = InventorySnapshot(
-            ingredient_id=ingredient.id,
-            as_of=as_of,
-            stock=None if remaining is None else sum((item.remaining for item in remaining), Decimal(0)),
-            remaining_lots=tuple(remaining or ()),
-        )
+        stock = _simulate(ingredient, own_lots, recipe_uses, menu_quantity, as_of)
+        result[ingredient.id] = InventorySnapshot(ingredient_id=ingredient.id, as_of=as_of, stock=stock)
     return result
 
 
-def _simulate(ingredient, own_lots, recipe_uses, menu_quantity, as_of: date) -> list[RemainingLot] | None:
+def _simulate(ingredient, own_lots, recipe_uses, menu_quantity, as_of: date) -> Decimal | None:
     if not ingredient.convertible or not own_lots:
         return None
-    shelf = [
-        RemainingLot(
-            lot=lot,
-            remaining=lot.purchase_quantity * ingredient.content_quantity,
-            expires_on=lot.purchased_on + timedelta(days=ingredient.shelf_life_days - 1)
-            if ingredient.shelf_life_days
-            else None,
-        )
-        for lot in own_lots
-    ]
-    on_hand: list[RemainingLot] = []
-    day = own_lots[0].purchased_on
+    received_by_day: dict[date, Decimal] = {}
+    for lot in own_lots:
+        received = lot.purchase_quantity * ingredient.content_quantity
+        received_by_day[lot.purchased_on] = received_by_day.get(lot.purchased_on, Decimal(0)) + received
+    stock = Decimal(0)
+    day = min(received_by_day)
     while day <= as_of:
-        on_hand = [item for item in on_hand if item.expires_on is None or item.expires_on >= day]
-        on_hand += [item for item in shelf if item.lot.purchased_on == day]
-        used = Decimal(0)
+        stock += received_by_day.get(day, Decimal(0))
         for line in recipe_uses:
             quantity = menu_quantity(line.menu_id, day)
             if quantity is None:
                 return None
-            used += quantity * line.quantity
-        consumed: list[RemainingLot] = []
-        for item in on_hand:
-            taken = min(item.remaining, used)
-            used -= taken
-            if item.remaining - taken > 0:
-                consumed.append(RemainingLot(item.lot, item.remaining - taken, item.expires_on))
-        on_hand = consumed
+            stock -= quantity * line.quantity
+        stock = max(Decimal(0), stock)
         day += timedelta(days=1)
-    return on_hand
+    return stock
 
 
 async def end_of(uow: UoW, store: stores.StoreSnapshot, as_of: date) -> dict[str, InventorySnapshot]:

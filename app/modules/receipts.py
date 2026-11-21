@@ -41,14 +41,6 @@ class LatestPurchaseFact:
 
 
 @dataclass(frozen=True)
-class PriceChange:
-    ingredient_id: str
-    latest_line_id: int
-    current: int
-    previous: int
-
-
-@dataclass(frozen=True)
 class ReceiptScanView:
     id: str
     status: str
@@ -85,19 +77,6 @@ async def latest(uow: UoW, store_id: str) -> dict[str, LatestPurchaseFact]:
             lot.ingredient_id, lot.supplier_id, lot.product_name, lot.unit_price, lot.purchased_on, lot.receipt_line_id
         )
     return facts
-
-
-async def price_changes(uow: UoW, store_id: str) -> list[PriceChange]:
-    """재료별 최근 두 유효 단가."""
-    priced: dict[str, list[ReceiptLot]] = {}
-    for lot in await lots(uow, store_id):
-        if lot.unit_price is not None:
-            priced.setdefault(lot.ingredient_id, []).append(lot)
-    return [
-        PriceChange(ingredient_id, history[-1].receipt_line_id, history[-1].unit_price, history[-2].unit_price)
-        for ingredient_id, history in sorted(priced.items())
-        if len(history) >= 2
-    ]
 
 
 # ───────── 접수 ─────────

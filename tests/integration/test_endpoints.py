@@ -353,7 +353,7 @@ async def test_closed_target_day_has_no_forecast_or_order(api, deps, runner):
     assert plan == {"targetDate": "2026-11-11", "events": [], "usualTotal": None, "suppliers": []}
     deps.clock.fixed = kst("2026-11-11T18:00:00")
     closed_today = (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()
-    assert closed_today["recommendations"] == [] and closed_today["surplusStock"] == []
+    assert closed_today == {"date": "2026-11-11", "baseTime": "17:00", "recommendations": []}
     menu_id = (await helpers.fetch_all(deps, "SELECT id FROM menu WHERE name = '김밥'"))[0].id
     body = {"menuId": menu_id, "discount": {"type": "PERCENT", "value": 10}, "startTime": "19:00", "quantity": 1}
     await api.call("createDiscount", 422, storeId=store_id, json=body)

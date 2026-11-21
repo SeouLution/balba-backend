@@ -63,7 +63,6 @@ CREATE TABLE ingredient (
   usage_unit text,
   purchase_unit text,
   content_quantity numeric(18,6) CHECK (content_quantity > 0),
-  shelf_life_days int CHECK (shelf_life_days > 0),
   tags jsonb NOT NULL DEFAULT '[]',
   UNIQUE (store_id, name)
 );

@@ -42,7 +42,6 @@ class IngredientSnapshot:
     usage_unit: str | None
     purchase_unit: str | None
     content_quantity: Decimal | None
-    shelf_life_days: int | None
     tags: tuple[str, ...]
 
     @property
@@ -141,7 +140,6 @@ def _ingredient(row) -> IngredientSnapshot:
         usage_unit=row.usage_unit,
         purchase_unit=row.purchase_unit,
         content_quantity=row.content_quantity,
-        shelf_life_days=row.shelf_life_days,
         tags=tuple(row.tags),
     )
 
@@ -211,7 +209,6 @@ async def resolve_receipt_ingredients(
         if target is None and resolution.existing_ingredient_id:
             raise NotFound("ingredient")
         if target is None:
-            shelf_life_days = policy.shelf_life_for(resolution.new_name)
             target_id = new_id("ing")
             await uow.execute(
                 insert(ingredient).values(
@@ -222,8 +219,7 @@ async def resolve_receipt_ingredients(
                     usage_unit=resolution.usage_unit if resolution.content_quantity else None,
                     purchase_unit=resolution.purchase_unit,
                     content_quantity=resolution.content_quantity if resolution.usage_unit else None,
-                    shelf_life_days=shelf_life_days,
-                    tags=policy.tags_for(resolution.new_name, shelf_life_days, 0),
+                    tags=policy.tags_for(resolution.new_name, 0),
                 )
             )
         else:
@@ -377,9 +373,7 @@ async def generate_recipes(deps: Container, job: queue.Job) -> None:
         if pending and saved_lines == 0 and not catalog.recipe_lines:
             raise ProviderInvalidPayload("recipe draft produced no usable recipe item")
         for item in catalog.ingredients:
-            tags = deps.policy.tags_for(
-                item.name, item.shelf_life_days, len(catalog.menu_ids_by_ingredient.get(item.id, ()))
-            )
+            tags = deps.policy.tags_for(item.name, len(catalog.menu_ids_by_ingredient.get(item.id, ())))
             await uow.execute(update(ingredient).where(ingredient.c.id == item.id).values(tags=tags))
         await stores.set_generation_status(uow, store_id, "READY")
         await queue.succeed(uow, job)
@@ -436,7 +430,6 @@ async def _insert_drafted_ingredient(
             usage_unit=usage_unit,
             purchase_unit=purchase.purchase_unit if purchase else None,
             content_quantity=purchase.content_quantity if purchase and purchase.purchase_unit else None,
-            shelf_life_days=policy.shelf_life_for(name),
             tags=[],
         )
     )

@@ -8,7 +8,7 @@ from sqlalchemy import insert, select
 from app.bootstrap import Container
 from app.infrastructure.db.tables import discount, menu
 from app.infrastructure.db.uow import UoW
-from app.modules import catalog, inventory, ordering, receipts, stores
+from app.modules import catalog, forecasting, receipts, stores
 from app.shared import texts
 from app.shared.policy import Policy
 from app.shared.types import (
@@ -63,50 +63,28 @@ class Recommendation:
 
 
 @dataclass(frozen=True)
-class SurplusItem:
-    ingredient: catalog.IngredientSnapshot
-    quantity: Decimal
-    waste_cost: int | None
-    mitigation: str
-
-
-@dataclass(frozen=True)
 class DiscountRecommendationsView:
     date: date
     base_time: time
     recommendations: tuple[Recommendation, ...]
-    surplus_stock: tuple[SurplusItem, ...]
 
 
 @dataclass(frozen=True)
-class StockToday:
-    """오늘 영업이 끝났을 때의 재고와 그중 추정 기한이 오늘인 양(사용 단위)."""
+class RecipeCosts:
+    """메뉴 1단위를 만드는 데 든 재료 원가의 입력."""
 
     catalog: catalog.CatalogSnapshot
     latest_purchase: dict[str, receipts.LatestPurchaseFact]
-    stock: dict[str, Decimal | None]
-    expiring_today: dict[str, Decimal]
 
-    def unit_cost(self, ingredient_id: str) -> Decimal | None:
-        fact = self.latest_purchase.get(ingredient_id)
-        if fact is None or fact.unit_price is None:
-            return None
-        return Decimal(fact.unit_price) / self.catalog.ingredient_by_id[ingredient_id].content_quantity
-
-    def recipe_uses(self, menu_id: str) -> list[tuple[str, Decimal]]:
-        return [
-            (line.ingredient_id, line.quantity)
-            for line in self.catalog.lines_by_menu.get(menu_id, ())
-            if line.quantity > 0
-        ]
-
-
-@dataclass(frozen=True)
-class DiscountAnalysis:
-    view: DiscountRecommendationsView
-    stock: StockToday
-    expiring_ingredient_ids: tuple[str, ...]
-    discounted_ingredient_ids: tuple[str, ...]
+    def menu_unit_cost(self, menu_id: str) -> Decimal | None:
+        """단가와 환산 비율을 아는 재료만 더한다. 하나도 없으면 계산할 수 없다."""
+        known = []
+        for line in self.catalog.lines_by_menu.get(menu_id, ()):
+            fact = self.latest_purchase.get(line.ingredient_id)
+            content_quantity = self.catalog.ingredient_by_id[line.ingredient_id].content_quantity
+            if line.quantity > 0 and fact is not None and fact.unit_price is not None and content_quantity:
+                known.append(line.quantity * Decimal(fact.unit_price) / content_quantity)
+        return sum(known, Decimal(0)) if known else None
 
 
 # ───────── 순수 계산 ─────────
@@ -131,35 +109,12 @@ def validate_discount_value(discount_type: str, discount_value: Decimal, origina
         raise InvalidRequest("discount value is out of range")
 
 
-def waste_cost(consumed: dict[str, Decimal], stock: StockToday) -> int | None:
-    """소진되는 임박 재고의 원가 합. 단가를 모르는 재료가 있으면 계산할 수 없다."""
-    costs = [stock.unit_cost(ingredient_id) for ingredient_id in consumed]
-    if any(cost is None for cost in costs):
-        return None
-    return round_half_up(sum((quantity * cost for quantity, cost in zip(consumed.values(), costs)), Decimal(0)))
-
-
-def expiring_consumption(stock: StockToday, menu_id: str, quantity: Decimal) -> dict[str, Decimal]:
-    return {
-        ingredient_id: min(quantity * usage, stock.expiring_today[ingredient_id])
-        for ingredient_id, usage in stock.recipe_uses(menu_id)
-        if stock.expiring_today.get(ingredient_id, Decimal(0)) > 0
-    }
-
-
 def evaluate(
-    payload: DiscountInput, target_menu: catalog.MenuSnapshot, stock: StockToday, today: date
+    payload: DiscountInput, target_menu: catalog.MenuSnapshot, costs: RecipeCosts, today: date
 ) -> DiscountEvaluation:
-    """할인가·덜 받는 금액·버릴 원가. dryRun과 실제 생성, 추천이 같이 쓴다."""
+    """할인가·덜 받는 금액·할인 수량의 재료 원가. dryRun과 실제 생성, 추천이 같이 쓴다."""
     price = discounted_price(target_menu.price, payload.discount_type, payload.discount_value)
-    uses = stock.recipe_uses(target_menu.id)
-    consumed = expiring_consumption(stock, target_menu.id, payload.quantity)
-    if consumed:
-        avoided = waste_cost(consumed, stock)
-    elif uses and all(stock.stock.get(ingredient_id) is not None for ingredient_id, _ in uses):
-        avoided = 0
-    else:
-        avoided = None
+    unit_cost = costs.menu_unit_cost(target_menu.id)
     return DiscountEvaluation(
         menu=target_menu,
         date=today,
@@ -169,7 +124,7 @@ def evaluate(
         quantity=payload.quantity,
         original_price=target_menu.price,
         discounted_price=price,
-        waste_cost_avoided=avoided,
+        waste_cost_avoided=None if unit_cost is None else round_half_up(payload.quantity * unit_cost),
         revenue_reduction=round_half_up(Decimal(target_menu.price - price) * payload.quantity),
         promo_text=texts.promo_text(target_menu.name),
     )
@@ -185,126 +140,58 @@ def recommended_start(window: tuple[datetime, datetime], today: date, policy: Po
     return None if candidate >= end else candidate.time().replace(tzinfo=None)
 
 
-def _candidate(target_menu: catalog.MenuSnapshot, stock: StockToday, start_time: time, today: date, policy: Policy):
-    uses = stock.recipe_uses(target_menu.id)
-    if (
-        target_menu.price is None
-        or not uses
-        or any(stock.stock.get(ingredient_id) is None for ingredient_id, _ in uses)
-    ):
-        return None
-    impending = [
-        (ingredient_id, usage) for ingredient_id, usage in uses if stock.expiring_today.get(ingredient_id, 0) > 0
-    ]
-    if not impending or any(stock.unit_cost(ingredient_id) is None for ingredient_id, _ in impending):
-        return None
-    quantity = min(
-        floor_int(min(stock.stock[ingredient_id] / usage for ingredient_id, usage in uses)),
-        max(floor_int(stock.expiring_today[ingredient_id] / usage) for ingredient_id, usage in impending),
-    )
-    if quantity < 1:
-        return None
-    payload = DiscountInput(
-        target_menu.id, "PERCENT", policy.discount_recommended_percent, start_time, Decimal(quantity)
-    )
-    evaluation = evaluate(payload, target_menu, stock, today)
-    savings = evaluation.waste_cost_avoided - evaluation.revenue_reduction
-    if savings <= 0:
-        return None
-    consumed = expiring_consumption(stock, target_menu.id, Decimal(quantity))
-    costliest = max(
-        consumed, key=lambda ingredient_id: (consumed[ingredient_id] * stock.unit_cost(ingredient_id), ingredient_id)
-    )
-    reason = texts.discount_reason(stock.catalog.ingredient_by_id[costliest].name)
-    return Recommendation(recommendation_id(today, target_menu.id), evaluation, savings, reason)
-
-
 def recommend(
-    stock: StockToday, start_time: time | None, today: date, policy: Policy
-) -> tuple[list[Recommendation], set[str]]:
-    """기대 절감이 가장 큰 메뉴부터 고르고, 고른 만큼 재고를 빼고 다시 계산한다. 같은 재고를 두 번 세지 않는다."""
+    forecasts: list[forecasting.ForecastSnapshot],
+    costs: RecipeCosts,
+    start_time: time | None,
+    today: date,
+    policy: Policy,
+) -> list[Recommendation]:
+    """추천 준비량보다 더 만든 메뉴마다 그 수량만큼 할인을 추천한다. 기대 절감이 양수인 것만 남긴다."""
     if start_time is None:
-        return [], set()
-    working = StockToday(stock.catalog, stock.latest_purchase, dict(stock.stock), dict(stock.expiring_today))
-    remaining = {item.id: item for item in stock.catalog.menus}
-    chosen: list[Recommendation] = []
-    discounted_ingredient_ids: set[str] = set()
-    while remaining:
-        candidates = [
-            found
-            for target_menu in remaining.values()
-            if (found := _candidate(target_menu, working, start_time, today, policy))
-        ]
-        if not candidates:
-            break
-        best = min(candidates, key=lambda item: (-item.expected_savings, item.evaluation.menu.id))
-        chosen.append(best)
-        del remaining[best.evaluation.menu.id]
-        for ingredient_id, usage in working.recipe_uses(best.evaluation.menu.id):
-            used = best.evaluation.quantity * usage
-            if working.expiring_today.get(ingredient_id, 0) > 0:
-                discounted_ingredient_ids.add(ingredient_id)
-                working.expiring_today[ingredient_id] = max(Decimal(0), working.expiring_today[ingredient_id] - used)
-            working.stock[ingredient_id] -= used
-    return chosen, discounted_ingredient_ids
+        return []
+    chosen = []
+    for item in forecasts:
+        made = item.produced if item.produced is not None else item.planned
+        quantity = floor_int(made - item.recommended)
+        if item.menu.price is None or quantity < 1:
+            continue
+        payload = DiscountInput(
+            item.menu.id, "PERCENT", policy.discount_recommended_percent, start_time, Decimal(quantity)
+        )
+        evaluation = evaluate(payload, item.menu, costs, today)
+        if evaluation.waste_cost_avoided is None:
+            continue
+        savings = evaluation.waste_cost_avoided - evaluation.revenue_reduction
+        if savings > 0:
+            reason = texts.discount_reason(Decimal(quantity), item.menu.unit)
+            chosen.append(Recommendation(recommendation_id(today, item.menu.id), evaluation, savings, reason))
+    return sorted(chosen, key=lambda item: (-item.expected_savings, item.evaluation.menu.id))
 
 
 # ───────── 조회 시 계산 ─────────
 
 
-async def stock_today(
-    uow: UoW, store: stores.StoreSnapshot, today: date
-) -> tuple[StockToday, dict[str, inventory.InventorySnapshot]]:
-    snapshots = await inventory.end_of(uow, store, today)
-    stock = StockToday(
-        catalog=await catalog.snapshot(uow, store.id),
-        latest_purchase=await receipts.latest(uow, store.id),
-        stock={ingredient_id: item.stock for ingredient_id, item in snapshots.items()},
-        expiring_today={
-            ingredient_id: expiring
-            for ingredient_id, item in snapshots.items()
-            if item.stock is not None and (expiring := item.expiring_between(today, today)) > 0
-        },
-    )
-    return stock, snapshots
-
-
-async def analyze(uow: UoW, deps: Container, ctx: StoreContext) -> DiscountAnalysis:
-    store = await stores.require(uow, ctx.store_id)
-    today, policy = ctx.local_date, deps.policy
-    stock, snapshots = await stock_today(uow, store, today)
-    expiring_ids = tuple(sorted(stock.expiring_today))
-    window = business_window(store.business_hours, today)
-    if window is None or ctx.local_now.time() < policy.discount_base_time:
-        empty = DiscountRecommendationsView(today, policy.discount_base_time, (), ())
-        return DiscountAnalysis(empty, stock, expiring_ids, ())
-
-    recommendations, discounted_ids = recommend(stock, recommended_start(window, today, policy), today, policy)
-    reduced_ids = (await ordering.plan_order(uow, deps, ctx, today + timedelta(days=1))).reduced_ingredient_ids
-    window_start, window_end = ordering.surplus_window(today, policy)
-    surplus = []
-    for ingredient_id in sorted(snapshots):
-        item = snapshots[ingredient_id]
-        target = stock.catalog.ingredient_by_id[ingredient_id]
-        if item.stock is None:
-            continue
-        if ingredient_id in stock.expiring_today:
-            quantity = stock.expiring_today[ingredient_id]
-            cost = waste_cost({ingredient_id: quantity}, stock)
-            mitigation = "DISCOUNT_RECOMMENDED" if ingredient_id in discounted_ids else "NONE"
-            surplus.append(SurplusItem(target, quantity, cost, mitigation))
-        elif (quantity := item.expiring_between(window_start, window_end)) > 0:
-            surplus.append(
-                SurplusItem(target, quantity, None, "ORDER_REDUCED" if ingredient_id in reduced_ids else "NONE")
-            )
-    view = DiscountRecommendationsView(today, policy.discount_base_time, tuple(recommendations), tuple(surplus))
-    return DiscountAnalysis(view, stock, expiring_ids, tuple(sorted(discounted_ids)))
+async def recipe_costs(uow: UoW, store_id: str) -> RecipeCosts:
+    return RecipeCosts(await catalog.snapshot(uow, store_id), await receipts.latest(uow, store_id))
 
 
 async def get_recommendations(deps: Container, store_id: str) -> DiscountRecommendationsView:
     ctx = deps.clock.context(store_id)
+    today, policy = ctx.local_date, deps.policy
     async with deps.db.read() as uow:
-        return (await analyze(uow, deps, ctx)).view
+        store = await stores.require(uow, store_id)
+        window = business_window(store.business_hours, today)
+        if window is None or ctx.local_now.time() < policy.discount_base_time:
+            return DiscountRecommendationsView(today, policy.discount_base_time, ())
+        recommendations = recommend(
+            await forecasting.read(uow, store_id, today),
+            await recipe_costs(uow, store_id),
+            recommended_start(window, today, policy),
+            today,
+            policy,
+        )
+        return DiscountRecommendationsView(today, policy.discount_base_time, tuple(recommendations))
 
 
 # ───────── 생성·이력 ─────────
@@ -318,7 +205,7 @@ def _start_inside_window(start_time: time, window: tuple[datetime, datetime], to
     return start <= moment < end
 
 
-async def _evaluate_request(uow: UoW, deps: Container, ctx: StoreContext, payload: DiscountInput) -> DiscountEvaluation:
+async def _evaluate_request(uow: UoW, ctx: StoreContext, payload: DiscountInput) -> DiscountEvaluation:
     store = await stores.require(uow, ctx.store_id)
     target_menu = await catalog.require_menu(uow, ctx.store_id, payload.menu_id)
     window = business_window(store.business_hours, ctx.local_date)
@@ -331,17 +218,7 @@ async def _evaluate_request(uow: UoW, deps: Container, ctx: StoreContext, payloa
         ctx.local_date, payload.menu_id
     ):
         raise InvalidRequest("recommendationId does not match the menu and date")
-    analysis = await analyze(uow, deps, ctx)
-    for recommended in analysis.view.recommendations:
-        same = recommended.evaluation
-        if recommended.id == payload.recommendation_id and (
-            same.discount_type,
-            same.discount_value,
-            same.start_time,
-            same.quantity,
-        ) == (payload.discount_type, payload.discount_value, payload.start_time, payload.quantity):
-            return same
-    return evaluate(payload, target_menu, analysis.stock, ctx.local_date)
+    return evaluate(payload, target_menu, await recipe_costs(uow, ctx.store_id), ctx.local_date)
 
 
 def _preview_id(ctx: StoreContext, payload: DiscountInput) -> str:
@@ -365,10 +242,10 @@ async def create_discount(deps: Container, store_id: str, payload: DiscountInput
     ctx = deps.clock.context(store_id)
     if dry_run:
         async with deps.db.read() as uow:
-            return DiscountSnapshot(_preview_id(ctx, payload), await _evaluate_request(uow, deps, ctx, payload))
+            return DiscountSnapshot(_preview_id(ctx, payload), await _evaluate_request(uow, ctx, payload))
     async with deps.db.write() as uow:
         await stores.lock(uow, store_id)
-        evaluation = await _evaluate_request(uow, deps, ctx, payload)
+        evaluation = await _evaluate_request(uow, ctx, payload)
         discount_id = new_id("dc")
         await uow.execute(
             insert(discount).values(

@@ -163,18 +163,6 @@ def _order_summary(summary: views.OrderSummary | None) -> dict | None:
     return {"supplierCount": summary.supplier_count, "estimatedTotal": summary.estimated_total}
 
 
-def alert(item: views.AlertSnapshot) -> dict:
-    body = {
-        "id": item.id,
-        "type": item.type,
-        "title": item.title,
-        "actions": [{"type": action} for action in item.actions],
-    }
-    if item.message:
-        body["message"] = item.message
-    return body
-
-
 def home(view: views.HomeView, policy: Policy) -> dict:
     tiles: dict = {"events": [event_summary(item) for item in view.events]}
     if view.weather is not None:
@@ -194,7 +182,6 @@ def home(view: views.HomeView, policy: Policy) -> dict:
             "items": [forecast_item(item, policy, view.view == "TODAY") for item in view.forecast_items],
             "totalMenuCount": view.total_menu_count,
         },
-        "cautions": [alert(item) for item in view.cautions],
     }
     if view.has_order_key:
         body["order"] = _order_summary(view.order)
@@ -275,11 +262,7 @@ def ingredient_list(view: views.IngredientListView) -> dict:
         body["price"] = {"unitPrice": row.latest_purchase.unit_price} if row.latest_purchase else None
         body["supplier"] = _ref(row.supplier) if row.supplier else None
         items.append(body)
-    return {
-        "items": items,
-        "counts": {"core": view.core_count, "later": view.later_count},
-        "notices": [alert(item) for item in view.notices],
-    }
+    return {"items": items, "counts": {"core": view.core_count, "later": view.later_count}}
 
 
 def _discount_value(evaluation: discounts.DiscountEvaluation) -> dict:
@@ -330,14 +313,5 @@ def discount_recommendations(view: discounts.DiscountRecommendationsView) -> dic
                 "expectedSavings": item.expected_savings,
             }
             for item in view.recommendations
-        ],
-        "surplusStock": [
-            {
-                "ingredient": _ref(item.ingredient),
-                "quantity": {"value": num(item.quantity), "unit": item.ingredient.usage_unit},
-                "wasteCost": item.waste_cost,
-                "mitigation": item.mitigation,
-            }
-            for item in view.surplus_stock
         ],
     }

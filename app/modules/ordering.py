@@ -9,7 +9,6 @@ from app.infrastructure.db.tables import ingredient, purchase_order, purchase_or
 from app.infrastructure.db.uow import UoW
 from app.modules import catalog, forecasting, inventory, receipts, stores, suppliers
 from app.shared import texts
-from app.shared.policy import Policy
 from app.shared.types import (
     InvalidRequest,
     NotFound,
@@ -42,7 +41,6 @@ class OrderPlanSnapshot:
     events: tuple[forecasting.NearbyEvent, ...]
     usual_total: int | None
     total: int | None
-    reduced_ingredient_ids: tuple[str, ...]
 
     @property
     def supplier_count(self) -> int:
@@ -70,11 +68,6 @@ def money_total(lines: list[tuple[Decimal, int | None]]) -> int | None:
     return sum(known) if known else None
 
 
-def surplus_window(today: date, policy: Policy) -> tuple[date, date]:
-    """'남을 것 같은 재고'로 보는 추정 기한 구간: 내일부터 정책 일수."""
-    return today + timedelta(days=1), today + timedelta(days=policy.discount_surplus_within_days)
-
-
 def plan(
     catalog_snapshot: catalog.CatalogSnapshot,
     forecasts: list[forecasting.ForecastSnapshot],
@@ -84,7 +77,6 @@ def plan(
     events: tuple[forecasting.NearbyEvent, ...],
     order_day: str,
     target_date: date,
-    policy: Policy,
 ) -> OrderPlanSnapshot:
     orderable = [
         item
@@ -105,36 +97,30 @@ def plan(
             Decimal(0),
         )
 
-    def packs(
-        planned_by_menu: dict[str, Decimal], item: catalog.IngredientSnapshot, excluded: Decimal = Decimal(0)
-    ) -> int:
-        usable = stock_by_ingredient[item.id].usable_on(target_date) or Decimal(0)
-        shortage = max(Decimal(0), need(planned_by_menu, item.id) - max(Decimal(0), usable - excluded))
+    def packs(planned_by_menu: dict[str, Decimal], item: catalog.IngredientSnapshot) -> int:
+        stock = stock_by_ingredient[item.id].stock or Decimal(0)
+        shortage = max(Decimal(0), need(planned_by_menu, item.id) - stock)
         return ceil_int(shortage / item.content_quantity)
 
     planned = {item.menu.id: item.planned for item in forecasts}
     planned_without_event = {item.menu.id: item.planned_without_event for item in forecasts}
     usual = {item.menu.id: Decimal(ceil_int(item.baseline)) for item in forecasts}
-    window_start, window_end = surplus_window(target_date - timedelta(days=1), policy)
 
-    lines, usual_lines, reduced = [], [], []
+    lines, usual_lines = [], []
     for item in orderable:
         fact = latest_purchase[item.id]
         quantity = packs(planned, item)
         usual_lines.append((Decimal(packs(usual, item)), fact.unit_price))
-        expiring = stock_by_ingredient[item.id].expiring_between(window_start, window_end)
-        if expiring > 0 and quantity < packs(planned, item, excluded=expiring):
-            reduced.append(item.id)
         if quantity == 0:
             continue
-        usable = stock_by_ingredient[item.id].usable_on(target_date)
+        stock = stock_by_ingredient[item.id].stock
         lines.append(
             OrderPlanningLine(
                 ingredient=item,
                 supplier=supplier_by_id[fact.supplier_id],
                 quantity=Decimal(quantity),
                 unit=item.purchase_unit,
-                stock=None if usable is None else usable / item.content_quantity,
+                stock=None if stock is None else stock / item.content_quantity,
                 price=fact.unit_price,
                 event_diff=Decimal(quantity - packs(planned_without_event, item)),
                 product_name=fact.product_name,
@@ -147,16 +133,15 @@ def plan(
         events=events,
         usual_total=money_total([line for line in usual_lines if line[0] > 0]),
         total=money_total([(line.quantity, line.price) for line in lines]),
-        reduced_ingredient_ids=tuple(sorted(reduced)),
     )
 
 
 async def plan_order(uow: UoW, deps: Container, ctx: StoreContext, target_date: date) -> OrderPlanSnapshot:
-    """발주 계획의 유일한 진입점. 홈·준비량 조정·발주 상세·할인의 발주 감소 판정이 모두 이것을 쓴다."""
+    """발주 계획의 유일한 진입점. 홈·준비량 조정·발주 상세가 모두 이것을 쓴다."""
     store = await stores.require(uow, ctx.store_id)
     window = business_window(store.business_hours, target_date)
     if window is None:
-        return OrderPlanSnapshot(target_date, (), (), None, None, ())
+        return OrderPlanSnapshot(target_date, (), (), None, None)
     forecast_context = await forecasting.context(uow, store, target_date, deps.policy)
     factor_events = forecasting.events_during(forecast_context.events, window) if deps.policy.event_factor != 1 else ()
     return plan(
@@ -168,7 +153,6 @@ async def plan_order(uow: UoW, deps: Container, ctx: StoreContext, target_date: 
         factor_events,
         day_code(ctx.local_date),
         target_date,
-        deps.policy,
     )
 
 

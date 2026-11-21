@@ -5,18 +5,9 @@ from decimal import Decimal
 
 from app.bootstrap import Container
 from app.infrastructure.db.uow import UoW
-from app.modules import catalog, discounts, forecasting, ordering, receipts, sales, stores, suppliers
+from app.modules import catalog, forecasting, ordering, receipts, sales, stores, suppliers
 from app.shared import texts
 from app.shared.types import KST, StoreContext, business_window
-
-
-@dataclass(frozen=True)
-class AlertSnapshot:
-    id: str
-    type: str
-    title: str
-    message: str | None
-    actions: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -44,7 +35,6 @@ class HomeView:
     total_menu_count: int
     has_order_key: bool
     order: OrderSummary | None
-    cautions: tuple[AlertSnapshot, ...]
 
 
 @dataclass(frozen=True)
@@ -65,45 +55,10 @@ class IngredientListView:
     items: tuple[IngredientRow, ...]
     core_count: int
     later_count: int
-    notices: tuple[AlertSnapshot, ...]
 
 
 def order_summary(plan: ordering.OrderPlanSnapshot) -> OrderSummary | None:
     return OrderSummary(plan.supplier_count, plan.total) if plan.lines else None
-
-
-async def build_alerts(uow: UoW, deps: Container, ctx: StoreContext) -> list[AlertSnapshot]:
-    """알림의 유일한 진입점. 홈의 cautions와 재료 탭의 notices가 같은 결과를 쓴다."""
-    analysis = await discounts.analyze(uow, deps, ctx)
-    ingredient_by_id = analysis.stock.catalog.ingredient_by_id
-    alerts = []
-    for ingredient_id in analysis.expiring_ingredient_ids:
-        with_discount = ingredient_id in analysis.discounted_ingredient_ids
-        title, message = texts.expiry_alert(ingredient_by_id[ingredient_id].name, with_discount)
-        alerts.append(
-            AlertSnapshot(
-                id=f"expiry:{ingredient_id}:{ctx.local_date.isoformat()}",
-                type="EXPIRY_IMMINENT",
-                title=title,
-                message=message,
-                actions=("OPEN_DISCOUNTS",) if with_discount else (),
-            )
-        )
-    price_alerts = []
-    for change in await receipts.price_changes(uow, ctx.store_id):
-        if change.previous <= 0 or change.ingredient_id not in ingredient_by_id:
-            continue
-        ratio = Decimal(abs(change.current - change.previous)) / Decimal(change.previous)
-        if ratio >= deps.policy.price_change_alert_ratio:
-            title, message = texts.price_changed_alert(
-                ingredient_by_id[change.ingredient_id].name, change.previous, change.current
-            )
-            price_alerts.append(
-                AlertSnapshot(
-                    f"price:{change.ingredient_id}:{change.latest_line_id}", "PRICE_CHANGED", title, message, ()
-                )
-            )
-    return alerts + sorted(price_alerts, key=lambda alert: alert.id)
 
 
 def resolve_view(ctx: StoreContext, deps: Container) -> tuple[str, date]:
@@ -197,7 +152,6 @@ async def get_home(deps: Container, store_id: str) -> HomeView:
             total_menu_count=len(menus),
             has_order_key=view == "TOMORROW",
             order=order,
-            cautions=tuple(await build_alerts(uow, deps, ctx)),
         )
 
 
@@ -217,7 +171,6 @@ async def adjust_forecast(
 
 
 async def list_ingredients(deps: Container, store_id: str, status: str | None) -> IngredientListView:
-    ctx = deps.clock.context(store_id)
     async with deps.db.read() as uow:
         await stores.require(uow, store_id)
         catalog_snapshot = await catalog.snapshot(uow, store_id)
@@ -237,5 +190,4 @@ async def list_ingredients(deps: Container, store_id: str, status: str | None) -
             items=tuple(rows),
             core_count=sum(1 for item in catalog_snapshot.ingredients if item.status == "CORE"),
             later_count=sum(1 for item in catalog_snapshot.ingredients if item.status == "LATER"),
-            notices=tuple(await build_alerts(uow, deps, ctx)),
         )

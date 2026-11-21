@@ -93,7 +93,7 @@ async def test_onboarding_flow(api, deps, runner):
         ["떡볶이", "어묵탕"],
         key=lambda name: next(menu["id"] for menu in by_name["어묵"]["usedInMenus"] if menu["name"] == name),
     )
-    assert set(by_name["어묵"]["tags"]) == {"RECOMMENDED", "SHORT_SHELF_LIFE"}
+    assert by_name["어묵"]["tags"] == []
     assert by_name["계란"]["tags"] == []
 
     core = [by_name[name]["id"] for name in ("계란", "어묵", "떡")]
@@ -139,7 +139,7 @@ async def test_onboarding_flow(api, deps, runner):
         {"type": "FIRST_FORECAST", "title": "첫 예측이 준비됐어요", "message": "6주치 판매 기록으로 계산했어요"}
     ]
     assert home["order"] is None
-    assert home["cautions"] == []
+    assert "cautions" not in home
     assert home["tiles"] == {"events": []}
 
 

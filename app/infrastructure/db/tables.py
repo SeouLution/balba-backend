@@ -43,7 +43,6 @@ ingredient = Table(
     Column("usage_unit", Text),
     Column("purchase_unit", Text),
     Column("content_quantity", QTY),
-    Column("shelf_life_days", Integer),
     Column("tags", JSONB),
 )
 

@@ -139,8 +139,6 @@ async def test_a02_receipts_then_order(api, deps, runner):
     assert (plan["usualTotal"], plan["events"]) == (28900, [])
     home = (await api.call("getHome", 200, storeId=store_id)).json()
     assert home["order"] == {"supplierCount": 2, "estimatedTotal": 28900}
-    assert [alert["title"] for alert in home["cautions"]] == ["계란 단가가 올랐어요"]
-    assert home["cautions"][0]["message"] == "계란 단가가 7,900원 → 8,900원으로 올랐어요 (+13%)"
 
     gimbap = ids["menus"]["김밥"]
     adjusted = await api.call(
@@ -333,11 +331,7 @@ async def test_a03_morning_and_discount(api, deps, runner):
     }
     [order] = (await api.call("createPurchaseOrders", 201, storeId=store_id, json=order_body)).json()["items"]
     evening = (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()
-    assert evening["recommendations"] == []
-    assert [
-        (item["ingredient"]["name"], item["quantity"], item["wasteCost"], item["mitigation"])
-        for item in evening["surplusStock"]
-    ] == [("어묵", {"value": 5500, "unit": "g"}, None, "ORDER_REDUCED")]
+    assert evening == {"date": "2026-11-10", "baseTime": "17:00", "recommendations": []}
 
     deps.clock.fixed = kst("2026-11-11T07:40:00")
     home = (await api.call("getHome", 200, storeId=store_id)).json()
@@ -359,58 +353,50 @@ async def test_a03_morning_and_discount(api, deps, runner):
     home = (await api.call("getHome", 200, storeId=store_id)).json()
     assert home["forecast"]["items"][0]["produced"] == 50
     assert await helpers.count(deps, "daily_sales") == sales_before
+    assert "cautions" not in home
+    assert "notices" not in (await api.call("listIngredients", 200, storeId=store_id)).json()
 
-    expiry = {
-        "id": f"expiry:{ids['ingredients']['어묵']}:2026-11-11",
-        "type": "EXPIRY_IMMINENT",
-        "title": "어묵 오늘까지",
-    }
-    expiry_plain = {**expiry, "message": "입고일 기준으로 계산한 예상 기한이에요", "actions": []}
-    assert home["cautions"][0] == expiry_plain
-    assert [alert["type"] for alert in home["cautions"]] == ["EXPIRY_IMMINENT", "PRICE_CHANGED"]
+    tang, tteok = ids["menus"]["어묵탕"], ids["menus"]["떡볶이"]
+    await api.call("setProduction", 204, storeId=store_id, date="2026-11-11", menuId=tang, json={"quantity": 14})
+    await api.call("setProduction", 204, storeId=store_id, date="2026-11-11", menuId=tteok, json={"quantity": 23})
 
     deps.clock.fixed = kst("2026-11-11T16:59:00")
     early = (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()
-    assert early == {"date": "2026-11-11", "baseTime": "17:00", "recommendations": [], "surplusStock": []}
-    assert (await api.call("getHome", 200, storeId=store_id)).json()["cautions"][0] == expiry_plain
+    assert early == {"date": "2026-11-11", "baseTime": "17:00", "recommendations": []}
 
     deps.clock.fixed = kst("2026-11-11T17:00:00")
     counts_before = await helpers.row_counts(deps)
     result = (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()
     assert await helpers.row_counts(deps) == counts_before
-    tang = ids["menus"]["어묵탕"]
-    assert result["recommendations"] == [
-        {
-            "id": f"rec_2026-11-11_{tang}",
-            "menu": {"id": tang, "name": "어묵탕"},
-            "unit": "인분",
-            "discount": {"type": "PERCENT", "value": 30},
-            "startTime": "19:00",
-            "quantity": 20,
-            "reasonText": "어묵이 많이 들어가요",
-            "expectedSavings": 54000,
-        }
-    ]
-    assert result["surplusStock"] == [
-        {
-            "ingredient": {"id": ids["ingredients"]["어묵"], "name": "어묵"},
-            "quantity": {"value": 3000, "unit": "g"},
-            "wasteCost": 90000,
-            "mitigation": "DISCOUNT_RECOMMENDED",
-        }
-    ]
-    assert (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json() == result
-    home = (await api.call("getHome", 200, storeId=store_id)).json()
-    assert home["cautions"][0] == {
-        **expiry,
-        "title": "어묵 오늘까지 · 할인 추천이 있어요",
-        "message": "입고일 기준으로 계산한 예상 기한이에요",
-        "actions": [{"type": "OPEN_DISCOUNTS"}],
+    assert result == {
+        "date": "2026-11-11",
+        "baseTime": "17:00",
+        "recommendations": [
+            {
+                "id": f"rec_2026-11-11_{tang}",
+                "menu": {"id": tang, "name": "어묵탕"},
+                "unit": "인분",
+                "discount": {"type": "PERCENT", "value": 30},
+                "startTime": "19:00",
+                "quantity": 4,
+                "reasonText": "예상보다 4인분 더 만들었어요",
+                "expectedSavings": 10800,
+            },
+            {
+                "id": f"rec_2026-11-11_{tteok}",
+                "menu": {"id": tteok, "name": "떡볶이"},
+                "unit": "인분",
+                "discount": {"type": "PERCENT", "value": 30},
+                "startTime": "19:00",
+                "quantity": 3,
+                "reasonText": "예상보다 3인분 더 만들었어요",
+                "expectedSavings": 3000,
+            },
+        ],
     }
-    notices = (await api.call("listIngredients", 200, storeId=store_id)).json()["notices"]
-    assert notices == home["cautions"]
+    assert (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json() == result
 
-    [card] = result["recommendations"]
+    card = result["recommendations"][0]
     body = {
         "recommendationId": card["id"],
         "menuId": tang,
@@ -436,14 +422,18 @@ async def test_a03_morning_and_discount(api, deps, runner):
     assert history == [created]
     assert (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json() == result
 
-    tteok = ids["menus"]["떡볶이"]
     manual = {"menuId": tteok, "discount": {"type": "AMOUNT", "value": 500}, "startTime": "20:00", "quantity": 5}
     manual_preview = (
         await api.call("createDiscount", 200, storeId=store_id, params={"dryRun": True}, json=manual)
     ).json()
     assert (manual_preview["discountedPrice"], manual_preview["revenueReduction"]) == (4500, 2500)
-    assert manual_preview["wasteCostAvoided"] == 7500
+    assert manual_preview["wasteCostAvoided"] == 12500
     await helpers.execute(deps, "UPDATE receipt_line SET unit_price = NULL WHERE product_name = '부산어묵 1kg'")
+    partly_known = (
+        await api.call("createDiscount", 200, storeId=store_id, params={"dryRun": True}, json=manual)
+    ).json()
+    assert partly_known["wasteCostAvoided"] == 5000
+    await helpers.execute(deps, "UPDATE receipt_line SET unit_price = NULL WHERE product_name = '떡볶이떡 1kg'")
     unknown_cost = (
         await api.call("createDiscount", 200, storeId=store_id, params={"dryRun": True}, json=manual)
     ).json()

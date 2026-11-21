@@ -32,10 +32,6 @@ def month_day(day: date) -> str:
     return f"{day.month}/{day.day}"
 
 
-def won(amount: int) -> str:
-    return f"{amount:,}"
-
-
 def qty_text(value: Decimal | int) -> str:
     value = Decimal(value)
     if value == value.to_integral_value():
@@ -112,21 +108,8 @@ def delivery_expected_banner(lines: list[tuple[str, Decimal, str]]) -> tuple[str
     return "어젯밤 발주한 재료가 오전에 들어와요", shown
 
 
-def expiry_alert(ingredient_name: str, with_discount: bool) -> tuple[str, str]:
-    title = f"{ingredient_name} 오늘까지" + (" · 할인 추천이 있어요" if with_discount else "")
-    return title, "입고일 기준으로 계산한 예상 기한이에요"
-
-
-def price_changed_alert(ingredient_name: str, previous: int, current: int) -> tuple[str, str]:
-    verb = "올랐어요" if current > previous else "내렸어요"
-    change = round_half_up(Decimal(current - previous) * 100 / Decimal(previous))
-    title = f"{ingredient_name} 단가가 {verb}"
-    message = f"{ingredient_name} 단가가 {won(previous)}원 → {won(current)}원으로 {verb} ({change:+d}%)"
-    return title, message
-
-
-def discount_reason(ingredient_name: str) -> str:
-    return f"{josa(ingredient_name, '이', '가')} 많이 들어가요"
+def discount_reason(quantity: Decimal, unit: str) -> str:
+    return f"예상보다 {qty_text(quantity)}{unit} 더 만들었어요"
 
 
 def promo_text(menu_name: str) -> str:
