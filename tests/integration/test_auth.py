@@ -40,7 +40,7 @@ async def test_duplicate_phone_is_conflict(api):
     "body",
     [
         {"phoneNumber": "010-1234-5678", "password": "password123"},
-        {"phoneNumber": "01012345678", "password": "short"},
+        {"phoneNumber": "01012345678", "password": "abc"},
         {"phoneNumber": "01012345678"},
     ],
 )
