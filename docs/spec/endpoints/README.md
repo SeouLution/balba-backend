@@ -1,6 +1,6 @@
 # 엔드포인트 구현 인덱스
 
-OpenAPI의 가게 API 20개 operation과 1:1 대응한다(계정 4개 제외). 각 파일은 공개 계약, 모듈 경계, 처리 순서, 원자성/실패, 완료 조건을 정의한다. `/health`, `/openapi.yaml`, `/scalar`는 별도의 [기반 유지 조건](../infrastructure/runtime.md)이다.
+OpenAPI의 가게 API 21개 operation과 1:1 대응한다(계정 4개 제외). 각 파일은 공개 계약, 모듈 경계, 처리 순서, 원자성/실패, 완료 조건을 정의한다. `/health`, `/openapi.yaml`, `/scalar`는 별도의 [기반 유지 조건](../infrastructure/runtime.md)이다.
 
 | operationId / 상세 명세 | Method | 경로 | 화면 / 목적 |
 |---|---|---|---|
@@ -11,6 +11,7 @@ OpenAPI의 가게 API 20개 operation과 1:1 대응한다(계정 4개 제외). �
 | [createSalesImport](createSalesImport.md) | POST | `/stores/{storeId}/sales-imports` | 1.2 이 기기에서 엑셀 올리기 |
 | [getSalesImport](getSalesImport.md) | GET | `/stores/{storeId}/sales-imports/{importId}` | 1.3 열 확인 (진행 상태 조회) |
 | [confirmSalesImport](confirmSalesImport.md) | POST | `/stores/{storeId}/sales-imports/{importId}/confirm` | 1.3 열 확인 |
+| [updateColumnMapping](updateColumnMapping.md) | PUT | `/stores/{storeId}/sales-imports/{importId}/column-mapping` | 1.3 열 바꾸기 |
 | [getHome](getHome.md) | GET | `/stores/{storeId}/home` | 2.0-1 온보딩 직후 · 2.2 당일 아침 · 2.7-1 행사 펼친 상태 · 2.9 행사 당일 아침 |
 | [adjustForecast](adjustForecast.md) | PUT | `/stores/{storeId}/forecasts/{date}/menus/{menuId}` | 2.0-1 · 2.7-1 준비량 +/− |
 | [setProduction](setProduction.md) | PUT | `/stores/{storeId}/production/{date}/menus/{menuId}` | 2.2 '만듦 +1' · 2.3 '기록하기' |

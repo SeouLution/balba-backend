@@ -19,11 +19,12 @@
 |---|---|---|---|
 | 없음 | createSalesImport | RECEIVED | 파일 위치 저장 + PARSE_SALES 작업 |
 | RECEIVED | PARSE_SALES 시작 | PARSING | 상태 전환 |
-| PARSING | 열 판별 성공 | NEEDS_CONFIRMATION | detection, pos_system, period, record_count |
+| PARSING | 열 판별 끝(찾지 못한 열이 있어도) | NEEDS_CONFIRMATION | detection, pos_system, period, record_count |
+| NEEDS_CONFIRMATION | updateColumnMapping | NEEDS_CONFIRMATION | 파일을 다시 읽어 detection, period, record_count 교체 |
 | NEEDS_CONFIRMATION | confirmSalesImport | APPLYING | APPLY_SALES 작업 |
 | APPLYING | APPLY_SALES 성공 | COMPLETED | menu, daily_sales + GENERATE_RECIPES(새 메뉴가 있을 때) + FIT_FORECAST_MODEL |
 
-APPLY_SALES는 저장된 detection의 열 매핑으로 파일을 다시 읽어 반영한다. 파싱 결과를 따로 저장하지 않는다. commit 전에 서버가 꺼지면 업무 변경은 없고 재시작 뒤 다시 실행된다. confirm 요청이 RECEIVED/PARSING이면 422, APPLYING/COMPLETED면 202 빈 body다.
+APPLY_SALES는 저장된 detection의 열 매핑으로 파일을 다시 읽어 반영한다. 파싱 결과를 따로 저장하지 않는다. commit 전에 서버가 꺼지면 업무 변경은 없고 재시작 뒤 다시 실행된다. confirm 요청이 RECEIVED/PARSING이거나 record_count가 0이면 422, APPLYING/COMPLETED면 202 빈 body다.
 
 PARSE/APPLY 작업이 DEAD면 getSalesImport는 500이다(D07). 클라이언트는 500을 받으면 폴링을 멈추고 실패 화면을 보여줘야 한다.
 

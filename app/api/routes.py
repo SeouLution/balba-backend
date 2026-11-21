@@ -1,4 +1,4 @@
-"""25개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
+"""26개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
 
 from typing import Annotated
 
@@ -146,6 +146,16 @@ async def get_sales_import(storeId: str, importId: str, deps: Deps):
 async def confirm_sales_import(storeId: str, importId: str, deps: Deps):
     await sales.confirm_import(deps, storeId, importId)
     return _empty(202)
+
+
+@router.put(
+    "/stores/{storeId}/sales-imports/{importId}/column-mapping",
+    operation_id="updateColumnMapping",
+    dependencies=[OwnsStore],
+)
+async def update_column_mapping(storeId: str, importId: str, body: dto.ColumnMappingIn, deps: Deps):
+    changes = body.model_dump(exclude_none=True)
+    return _json(presenters.sales_import(await sales.update_column_mapping(deps, storeId, importId, changes)))
 
 
 @router.get("/stores/{storeId}/home", operation_id="getHome", dependencies=[OwnsStore])

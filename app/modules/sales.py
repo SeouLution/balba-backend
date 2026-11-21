@@ -20,6 +20,7 @@ from app.shared.types import KST, InvalidRequest, NotFound, new_id, normalize_na
 SALES_EXTENSIONS = {"xlsx", "xls", "csv"}
 SAMPLE_ROW_COUNT = 20
 PREVIEW_ROW_COUNT = 5
+MAPPING_KEYS = ("date", "menuName", "quantity")
 DATE_PATTERN = re.compile(r"^\s*(\d{4})[-/.]\s?(\d{1,2})[-/.]\s?(\d{1,2})")
 
 
@@ -152,6 +153,28 @@ def parse_sales_rows(rows: list[list], mapping: dict) -> list[SalesRecord]:
     return records
 
 
+def _column_names(header: list[str]) -> list[str]:
+    return list(dict.fromkeys(name for name in header if name))
+
+
+def _parsed_values(rows: list[list], mapping: dict) -> dict:
+    records = parse_sales_rows(rows, mapping) if all(mapping.values()) else []
+    return {
+        "detection": {
+            "columns": _column_names(header_of(rows)[0]),
+            "columnMapping": mapping,
+            "menuCount": len({record.menu_name for record in records}),
+            "preview": [
+                {"date": record.sold_on.isoformat(), "menuName": record.menu_name, "quantity": float(record.quantity)}
+                for record in records[:PREVIEW_ROW_COUNT]
+            ],
+        },
+        "period_from": min((record.sold_on for record in records), default=None),
+        "period_to": max((record.sold_on for record in records), default=None),
+        "record_count": len(records),
+    }
+
+
 def _extension(filename: str | None) -> str:
     extension = (filename or "").rsplit(".", 1)[-1].lower() if "." in (filename or "") else ""
     if extension not in SALES_EXTENSIONS:
@@ -216,8 +239,34 @@ async def confirm_import(deps: Container, store_id: str, import_id: str) -> None
         if row.status in ("RECEIVED", "PARSING"):
             raise InvalidRequest("sales import is not ready to confirm")
         if row.status == "NEEDS_CONFIRMATION":
+            if not row.record_count:
+                raise InvalidRequest("sales import has no readable sales row")
             await uow.execute(update(sales_import).where(sales_import.c.id == import_id).values(status="APPLYING"))
             await queue.enqueue(uow, "APPLY_SALES", {"storeId": store_id, "importId": import_id}, f"apply:{import_id}")
+
+
+async def update_column_mapping(
+    deps: Container, store_id: str, import_id: str, changes: dict[str, str]
+) -> SalesImportView:
+    async with deps.db.read() as uow:
+        await stores.require(uow, store_id)
+        row = await _require_import(uow, store_id, import_id)
+        await queue.fail_if_dead(uow, f"parse:{import_id}", f"apply:{import_id}")
+    if row.status != "NEEDS_CONFIRMATION":
+        raise InvalidRequest("sales import is not waiting for confirmation")
+    rows = await _read_file_rows(deps, row.file_path)
+    columns = _column_names(header_of(rows)[0])
+    if any(name not in columns for name in changes.values()):
+        raise InvalidRequest("column mapping names a column that is not in the header")
+    parsed = _parsed_values(rows, {**row.detection["columnMapping"], **changes})
+
+    async with deps.db.write() as uow:
+        await stores.lock(uow, store_id)
+        current = await _require_import(uow, store_id, import_id)
+        if current.status != "NEEDS_CONFIRMATION":
+            raise InvalidRequest("sales import is not waiting for confirmation")
+        await uow.execute(update(sales_import).where(sales_import.c.id == import_id).values(**parsed))
+    return await get_import(deps, store_id, import_id)
 
 
 async def _read_file_rows(deps: Container, file_key: str) -> list[list]:
@@ -251,35 +300,17 @@ async def parse_import(deps: Container, job: queue.Job) -> None:
         raise queue.PermanentJobFailure("sales file has no header row")
     sample = [["" if cell is None else str(cell) for cell in sample_row] for sample_row in body[:SAMPLE_ROW_COUNT]]
     detection = await deps.providers.columns.detect_columns(header, sample)
-    mapping = {"date": detection.date, "menuName": detection.menu_name, "quantity": detection.quantity}
-    records = parse_sales_rows(rows, mapping)
-    if not records:
-        raise queue.PermanentJobFailure("sales file has no readable sales row")
+    detected = (detection.date, detection.menu_name, detection.quantity)
+    columns = _column_names(header)
+    mapping = {key: name if name in columns else None for key, name in zip(MAPPING_KEYS, detected)}
+    parsed = _parsed_values(rows, mapping)
 
     async with deps.db.write() as uow:
         await stores.lock(uow, store_id)
         await uow.execute(
             update(sales_import)
             .where(sales_import.c.id == import_id, sales_import.c.status == "PARSING")
-            .values(
-                status="NEEDS_CONFIRMATION",
-                pos_system=detection.pos_system,
-                detection={
-                    "columnMapping": mapping,
-                    "menuCount": len({record.menu_name for record in records}),
-                    "preview": [
-                        {
-                            "date": record.sold_on.isoformat(),
-                            "menuName": record.menu_name,
-                            "quantity": float(record.quantity),
-                        }
-                        for record in records[:PREVIEW_ROW_COUNT]
-                    ],
-                },
-                period_from=min(record.sold_on for record in records),
-                period_to=max(record.sold_on for record in records),
-                record_count=len(records),
-            )
+            .values(status="NEEDS_CONFIRMATION", pos_system=detection.pos_system, **parsed)
         )
         await queue.succeed(uow, job)
 

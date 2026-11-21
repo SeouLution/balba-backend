@@ -14,6 +14,7 @@ MINIMAL_REQUESTS = {
     "putPushToken": {"json": {"token": helpers.PUSH_TOKEN}},
     "saveRecipes": {"json": {"items": [{"menuId": "mn_x", "items": []}]}},
     "createSalesImport": {"files": {"file": ("sales.csv", b"a,b\n1,2\n", "text/csv")}},
+    "updateColumnMapping": {"json": {}},
     "adjustForecast": QUANTITY,
     "setProduction": QUANTITY,
     "createPurchaseOrders": {
@@ -48,7 +49,7 @@ def test_runtime_routes_match_openapi_one_to_one():
         for method, operation in item.items()
     }
     declared = {(method, "/v1" + path, operation_id) for operation_id, (method, path, _) in OPERATIONS.items()}
-    assert len(declared) == 25
+    assert len(declared) == 26
     assert runtime == declared
 
 
@@ -64,6 +65,7 @@ async def test_store_routes_need_owner_cookie(api, operation_id):
     [
         "getSalesImport",
         "confirmSalesImport",
+        "updateColumnMapping",
         "getReceiptScan",
         "confirmReceiptScan",
         "adjustForecast",
