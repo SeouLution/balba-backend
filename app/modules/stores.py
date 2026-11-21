@@ -114,12 +114,16 @@ def validated_business_hours(hours: list[DayHours]) -> tuple[DayHours, ...]:
     return tuple(ordered)
 
 
-async def create_store(deps: Container, user_id: str, payload: StoreCreateInput) -> StoreSnapshot:
+def _validated_input(payload: StoreCreateInput) -> tuple[str, str, tuple[DayHours, ...]]:
     name = normalize_name(payload.name)
     road_address = normalize_name(payload.road_address)
     if not 1 <= len(name) <= 40 or not road_address:
         raise InvalidRequest("name or address is empty or too long")
-    hours = validated_business_hours(list(payload.business_hours))
+    return name, road_address, validated_business_hours(list(payload.business_hours))
+
+
+async def create_store(deps: Container, user_id: str, payload: StoreCreateInput) -> StoreSnapshot:
+    name, road_address, hours = _validated_input(payload)
     store_id = new_id("st")
     async with deps.db.write() as uow:
         claimed = await uow.execute(
@@ -139,6 +143,30 @@ async def create_store(deps: Container, user_id: str, payload: StoreCreateInput)
             )
         )
         await queue.enqueue(uow, "GEOCODE_STORE", {"storeId": store_id}, f"geocode:{store_id}")
+        return await require(uow, store_id)
+
+
+async def update_store(deps: Container, store_id: str, payload: StoreCreateInput) -> StoreSnapshot:
+    name, road_address, hours = _validated_input(payload)
+    change_id = new_id("chg")
+    async with deps.db.write() as uow:
+        current = await lock(uow, store_id)
+        address_changed = road_address != current.road_address
+        values = {
+            "name": name,
+            "category": payload.category,
+            "road_address": road_address,
+            "business_hours": _hours_to_json(hours),
+        }
+        if address_changed:
+            values.update(latitude=None, longitude=None)
+        await uow.execute(update(store).where(store.c.id == store_id).values(**values))
+        if address_changed:
+            await queue.enqueue(uow, "GEOCODE_STORE", {"storeId": store_id}, f"geocode:{store_id}:{change_id}")
+        elif hours != current.business_hours:
+            today = deps.clock.context(store_id).local_date
+            for target_date in (today, today + timedelta(days=1)):
+                await queue.enqueue_forecast(uow, store_id, target_date, "DATA_CHANGED", change_id)
         return await require(uow, store_id)
 
 
@@ -219,4 +247,5 @@ async def geocode_store(deps: Container, job: queue.Job) -> None:
             today = deps.clock.context(store_id).local_date
             for target_date in (today, today + timedelta(days=1)):
                 await queue.enqueue_refresh_context(uow, store_id, target_date, "DATA_CHANGED")
+                await queue.enqueue_forecast(uow, store_id, target_date, "DATA_CHANGED", job.id)
         await queue.succeed(uow, job)

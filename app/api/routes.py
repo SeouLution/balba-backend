@@ -1,4 +1,4 @@
-"""29개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
+"""30개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
 
 from typing import Annotated
 
@@ -93,9 +93,7 @@ async def get_user_store(userId: str, deps: Deps, access_token: AccessToken = No
     return _json({"storeId": await accounts.store_id_of(deps, userId)})
 
 
-@router.post("/stores", operation_id="createStore")
-async def create_store(body: dto.StoreCreateIn, deps: Deps, access_token: AccessToken = None):
-    account = await accounts.get_account(deps, accounts.verified_user_id(deps, access_token))
+def _store_input(body: dto.StoreCreateIn) -> stores.StoreCreateInput:
     hours = tuple(
         DayHours(
             day=item.day,
@@ -105,8 +103,18 @@ async def create_store(body: dto.StoreCreateIn, deps: Deps, access_token: Access
         )
         for item in body.businessHours
     )
-    payload = stores.StoreCreateInput(body.name, body.category, body.address.roadAddress, hours)
-    return _json(presenters.store(await stores.create_store(deps, account.user_id, payload)), 201)
+    return stores.StoreCreateInput(body.name, body.category, body.address.roadAddress, hours)
+
+
+@router.post("/stores", operation_id="createStore")
+async def create_store(body: dto.StoreCreateIn, deps: Deps, access_token: AccessToken = None):
+    account = await accounts.get_account(deps, accounts.verified_user_id(deps, access_token))
+    return _json(presenters.store(await stores.create_store(deps, account.user_id, _store_input(body))), 201)
+
+
+@router.put("/stores/{storeId}", operation_id="updateStore", dependencies=[OwnsStore])
+async def update_store(storeId: str, body: dto.StoreCreateIn, deps: Deps):
+    return _json(presenters.store(await stores.update_store(deps, storeId, _store_input(body))))
 
 
 @router.put("/stores/{storeId}/push-token", operation_id="putPushToken", dependencies=[OwnsStore])

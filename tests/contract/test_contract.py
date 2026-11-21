@@ -11,6 +11,7 @@ from tests.fakes import JPEG_HEAD
 
 QUANTITY = {"json": {"quantity": 1}}
 MINIMAL_REQUESTS = {
+    "updateStore": {"json": helpers.store_body()},
     "putPushToken": {"json": {"token": helpers.PUSH_TOKEN}},
     "saveRecipes": {"json": {"items": [{"menuId": "mn_x", "items": []}]}},
     "createSalesImport": {"files": {"file": ("sales.csv", b"a,b\n1,2\n", "text/csv")}},
@@ -51,7 +52,7 @@ def test_runtime_routes_match_openapi_one_to_one():
         for method, operation in item.items()
     }
     declared = {(method, "/v1" + path, operation_id) for operation_id, (method, path, _) in OPERATIONS.items()}
-    assert len(declared) == 29
+    assert len(declared) == 30
     assert runtime == declared
 
 
