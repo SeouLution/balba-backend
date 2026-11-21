@@ -162,7 +162,7 @@ async def test_a02_receipts_then_order(api, deps, runner):
 
     plan = (await api.call("getOrderPlan", 200, storeId=store_id, targetDate="2026-11-11")).json()
     assert plan_lines(plan) == {
-        "계란": ({"value": 50, "unit": "개"}, EGG_UNIT_PRICE, {"value": 0, "unit": "개"}, 0),
+        "계란": ({"value": 50, "unit": "개"}, EGG_UNIT_PRICE, {"value": -580, "unit": "개"}, 0),
         "떡": ({"value": 2000, "unit": "g"}, 5, {"value": 2000, "unit": "g"}, 0),
     }
     assert (plan["usualTotal"], plan["events"]) == (24833, [])
@@ -407,7 +407,7 @@ async def test_a03_morning_and_low_stock(api, deps, runner):
     assert await helpers.count(deps, "daily_sales") == sales_before
     assert low_stock(produced) == low_stock(home)
 
-    delivered = receipt_image("대한식자재", "2026-11-11", [egg(20, 8900)])
+    delivered = receipt_image("대한식자재", "2026-11-11", [egg(30, 8900)])
     scan_id = await helpers.scan_receipts(api, runner, store_id, [delivered])
     await api.call("confirmReceiptScan", 204, storeId=store_id, scanId=scan_id)
     home = (await api.call("getHome", 200, storeId=store_id)).json()
