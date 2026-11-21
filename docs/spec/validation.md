@@ -100,7 +100,7 @@ if/then 조건, Decimal의 JSON number, nullable과 필드 생략, 204 빈 body�
 
 1. JPEG 여러 장 접수 202, PROCESSING → NEEDS_REVIEW. receipt_line은 아직 0건.
 2. 같은 영수증을 두 번 넣은 경우 한 장만 남고 안내가 온다. 읽지 못한 사진은 빠지고 안내가 온다.
-3. 질문에 SAME/DIFFERENT로 답하고 confirm 204 → 거래처·재료·입고가 한 번에 생긴다.
+3. 질문에 SAME/DIFFERENT로 답하고 confirm 204 → 거래처·입고가 한 번에 생긴다. 재료 목록에 없는 줄과 DIFFERENT로 답한 줄은 빠지고 안내가 오며, 재료는 새로 생기지 않는다(D57).
 4. 같은 사진의 A·B 스캔을 모두 NEEDS_REVIEW로 만든 뒤 A, B를 확정한다. 둘 다 204, 같은 사진의 입고는 한 번이다. B를 조회하면 중복 안내가 있다. 같은 날 다른 품목 사진은 반영되며, 이후 A 사진만 다시 올려도 입고는 늘지 않는다.
 5. 같은 품명이 다음 scan에 다시 나오면 질문 없이 같은 재료에 연결된다.
 6. 주문 요일 확정 204 → getOrderPlan에 오늘 주문 요일인 거래처만 나온다. 줄마다 stock이 숫자로 나온다.

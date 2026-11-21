@@ -1026,7 +1026,9 @@ components:
           properties:
             id: { type: [string, "null"] }
             name: { type: string, examples: ["계란"] }
-            isNew: { type: boolean }
+            isNew:
+              type: boolean
+              description: "true면 같은 재료인지 묻는 질문에 아직 답하지 않은 줄이다. 영수증으로는 재료가 새로 생기지 않는다."
         quantity:
           description: "재료 단위로 환산한 입고량(특란 30구 2판 → 60개, 떡볶이떡 2kg 3봉 → 6000g)"
           oneOf:
@@ -1089,7 +1091,7 @@ components:
       properties:
         answers:
           type: array
-          description: "같은 재료인지 묻는 질문의 답('달라요' / '같아요')"
+          description: "같은 재료인지 묻는 질문의 답('달라요' / '같아요'). DIFFERENT로 답한 줄은 입고에서 빠진다."
           items:
             type: object
             required: [questionId, answer]

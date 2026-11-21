@@ -306,26 +306,28 @@ async def test_receipt_answers_units_and_empty_scan(api, deps, runner):
             {"name": "계란 10kg", "amount": 10000, "unit": "g", "match": "계란", "kind": "exact"},
             {"name": "참기름 1.8L", "amount": 1800, "unit": "g", "linePrice": 25000},
             {"name": "양파 1망", "amount": 1, "unit": "망"},
+            rice_cake(1000),
         ],
     )
     scan_id = await helpers.scan_receipts(api, runner, store_id, [different])
     review = (await api.call("getReceiptScan", 200, storeId=store_id, scanId=scan_id)).json()
+    assert "참기름 1.8L" not in str(review["groups"])
     answers = {"answers": [{"questionId": review["questions"][0]["id"], "answer": "DIFFERENT"}]}
     await api.call("confirmReceiptScan", 204, storeId=store_id, scanId=scan_id, json=answers)
     confirmed = (await api.call("getReceiptScan", 200, storeId=store_id, scanId=scan_id)).json()
     names = [line["ingredient"] for line in confirmed["groups"][0]["receipts"][0]["lines"]]
-    assert [(item["name"], item["isNew"]) for item in names] == [("부산어묵 1kg", True), ("참기름 1.8L", True)]
-    assert confirmed["removedDuplicateTexts"] == ["11/9 새벽상회 영수증에서 1줄은 읽지 못해서 뺐어요"] * 2
-    created = await helpers.fetch_all(deps, "SELECT name, unit FROM ingredient WHERE name LIKE '참기름%'")
-    assert [tuple(row) for row in created] == [("참기름 1.8L", "g")]
+    assert names == [{"id": ids["ingredients"]["떡"], "name": "떡", "isNew": False}]
+    dropped_notices = [
+        "11/9 새벽상회 영수증에서 1줄은 읽지 못해서 뺐어요",
+        "11/9 새벽상회 영수증에서 재료 목록에 없는 1줄은 뺐어요",
+    ]
+    assert confirmed["removedDuplicateTexts"] == dropped_notices * 2
 
     listing = (await api.call("listIngredients", 200, storeId=store_id)).json()
     by_name = {item["name"]: item for item in listing["items"]}
-    assert len(listing["items"]) == 7
-    assert by_name["참기름 1.8L"]["price"] == {"unitPrice": 13.888889}
-    assert (by_name["참기름 1.8L"]["unit"], by_name["김"]["unit"]) == ("g", "개")
-    assert by_name["부산어묵 1kg"]["price"] == {"unitPrice": 30}
-    assert by_name["계란"]["price"] is None and by_name["계란"]["supplier"] is None
+    assert sorted(by_name) == ["계란", "김", "단무지", "떡", "어묵"]
+    assert by_name["떡"]["price"] == {"unitPrice": 5}
+    assert by_name["계란"]["price"] is None and by_name["어묵"]["price"] is None
 
     empty_scan = await helpers.scan_receipts(api, runner, store_id, [UNREADABLE])
     empty = (await api.call("getReceiptScan", 200, storeId=store_id, scanId=empty_scan)).json()

@@ -220,7 +220,7 @@ def build_scan_result(
         key = supplier_key(reading.supplier_name)
         known = supplier_by_key.get(key)
         supplier_name = display_names.setdefault(key, known.name if known else normalize_name(reading.supplier_name))
-        lines = []
+        readable_lines = []
         for line in reading.lines:
             raw_name = normalize_name(line.raw_product_name or "")
             if not raw_name or line.amount is None or line.amount <= 0 or line.unit not in INGREDIENT_UNITS:
@@ -244,16 +244,23 @@ def build_scan_result(
                     {"id": new_id("q"), "rawName": raw_name, "candidateId": matched.id, "candidateName": matched.name},
                 )
                 entry["questionId"] = question["id"]
-            lines.append(entry)
+            readable_lines.append(entry)
 
-        dropped = len(reading.lines) - len(lines)
-        if not lines:
+        if not readable_lines:
             photos.append({"number": number, "status": "UNREADABLE", "applied": False, "lines": []})
             notices.append(texts.unreadable_photo_notice(number))
             continue
-        if dropped:
-            notices.append(texts.unreadable_lines_notice(reading.purchased_on, supplier_name, dropped))
-        photo_fingerprint = fingerprint(supplier_name, reading.purchased_on, lines)
+        lines = [entry for entry in readable_lines if entry["ingredientId"] or entry["questionId"]]
+        unreadable_count = len(reading.lines) - len(readable_lines)
+        unknown_count = len(readable_lines) - len(lines)
+        if unreadable_count:
+            notices.append(texts.unreadable_lines_notice(reading.purchased_on, supplier_name, unreadable_count))
+        if unknown_count:
+            notices.append(texts.unknown_lines_notice(reading.purchased_on, supplier_name, unknown_count))
+        if not lines:
+            photos.append({"number": number, "status": "UNREADABLE", "applied": False, "lines": []})
+            continue
+        photo_fingerprint = fingerprint(supplier_name, reading.purchased_on, readable_lines)
         duplicate = photo_fingerprint in seen_fingerprints or photo_fingerprint in applied_fingerprints
         seen_fingerprints.add(photo_fingerprint)
         if duplicate:
@@ -457,9 +464,12 @@ async def confirm_scan(deps: Container, store_id: str, scan_id: str, answers: li
         photos = [photo for photo in result["photos"] if photo["status"] == "READ"]
 
         supplier_by_name = await _resolve_suppliers(uow, store_id, photos)
-        ingredient_by_line = await _resolve_ingredients(
-            uow, store_id, photos, result["questions"], answer_by_question, deps
-        )
+        ingredient_by_id = (await catalog.snapshot(uow, store_id)).ingredient_by_id
+        same_candidate_by_question = {
+            question["id"]: question["candidateId"]
+            for question in result["questions"]
+            if answer_by_question[question["id"]] == "SAME"
+        }
 
         groups: dict[str, dict] = {}
         for photo in photos:
@@ -480,8 +490,14 @@ async def confirm_scan(deps: Container, store_id: str, scan_id: str, answers: li
                 photo["purchasedOn"], {"purchasedOn": photo["purchasedOn"], "lines": []}
             )
             skipped = 0
-            for line_idx, line in enumerate(photo["lines"]):
-                target = ingredient_by_line[(photo["number"], line_idx)]
+            unknown = 0
+            for line in photo["lines"]:
+                target = ingredient_by_id.get(
+                    line["ingredientId"] or same_candidate_by_question.get(line["questionId"])
+                )
+                if target is None:
+                    unknown += 1
+                    continue
                 if line["unit"] != target.unit:
                     skipped += 1
                     continue
@@ -503,17 +519,14 @@ async def confirm_scan(deps: Container, store_id: str, scan_id: str, answers: li
                 )
                 receipt["lines"].append(
                     {
-                        "ingredient": {
-                            "id": target.id,
-                            "name": target.name,
-                            "isNew": line["ingredientId"] is None
-                            and answer_by_question.get(line["questionId"]) != "SAME",
-                        },
+                        "ingredient": {"id": target.id, "name": target.name, "isNew": False},
                         "quantity": {"value": line["amount"], "unit": line["unit"]},
                     }
                 )
             if skipped:
                 notices.append(texts.unreadable_lines_notice(purchased_on, target_supplier.name, skipped))
+            if unknown:
+                notices.append(texts.unknown_lines_notice(purchased_on, target_supplier.name, unknown))
             photo["applied"] = True
 
         for target_supplier in {item.id: item for item in supplier_by_name.values()}.values():
@@ -553,34 +566,3 @@ async def _resolve_suppliers(uow: UoW, store_id: str, photos: list[dict]) -> dic
         )
         drafts[source_key] = suppliers.SupplierDraft(source_key, name, phone, read_on)
     return await suppliers.resolve(uow, store_id, list(drafts.values()))
-
-
-async def _resolve_ingredients(
-    uow: UoW,
-    store_id: str,
-    photos: list[dict],
-    questions: list[dict],
-    answer_by_question: dict[str, str],
-    deps: Container,
-) -> dict[tuple[int, int], catalog.IngredientSnapshot]:
-    candidate_by_question = {question["id"]: question["candidateId"] for question in questions}
-    resolutions = []
-    for photo in photos:
-        for line_idx, line in enumerate(photo["lines"]):
-            existing_id = line["ingredientId"]
-            if existing_id is None and answer_by_question.get(line["questionId"]) == "SAME":
-                existing_id = candidate_by_question[line["questionId"]]
-            resolutions.append(
-                catalog.IngredientResolution(
-                    source_key=f"{photo['number']}:{line_idx}",
-                    existing_ingredient_id=existing_id,
-                    new_name=None if existing_id else line["rawProductName"],
-                    unit=line["unit"],
-                )
-            )
-    resolved = await catalog.resolve_receipt_ingredients(uow, store_id, resolutions)
-    return {
-        (photo["number"], line_idx): resolved[f"{photo['number']}:{line_idx}"]
-        for photo in photos
-        for line_idx in range(len(photo["lines"]))
-    }

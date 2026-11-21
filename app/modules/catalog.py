@@ -82,14 +82,6 @@ class CatalogSnapshot:
 
 
 @dataclass(frozen=True)
-class IngredientResolution:
-    source_key: str
-    existing_ingredient_id: str | None
-    new_name: str | None
-    unit: str
-
-
-@dataclass(frozen=True)
 class RecipeReplacement:
     menu_id: str
     items: tuple[tuple[str, Decimal], ...]
@@ -149,35 +141,6 @@ async def upsert_imported_menus(uow: UoW, store_id: str, names: list[str]) -> di
 async def menus_without_recipe(uow: UoW, store_id: str) -> list[MenuSnapshot]:
     catalog = await snapshot(uow, store_id)
     return [item for item in catalog.menus if item.id not in catalog.lines_by_menu]
-
-
-async def resolve_receipt_ingredients(
-    uow: UoW, store_id: str, resolutions: list[IngredientResolution]
-) -> dict[str, IngredientSnapshot]:
-    """영수증 확정에서만 호출한다. 새 재료는 영수증 줄의 단위로 만든다."""
-    resolved: dict[str, str] = {}
-    for resolution in resolutions:
-        catalog = await snapshot(uow, store_id)
-        by_name = {item.name: item for item in catalog.ingredients}
-        target = (
-            catalog.ingredient_by_id.get(resolution.existing_ingredient_id)
-            if resolution.existing_ingredient_id
-            else by_name.get(resolution.new_name)
-        )
-        if target is None and resolution.existing_ingredient_id:
-            raise NotFound("ingredient")
-        if target is None:
-            target_id = new_id("ing")
-            await uow.execute(
-                insert(ingredient).values(
-                    id=target_id, store_id=store_id, name=resolution.new_name, unit=resolution.unit
-                )
-            )
-        else:
-            target_id = target.id
-        resolved[resolution.source_key] = target_id
-    catalog = await snapshot(uow, store_id)
-    return {source_key: catalog.ingredient_by_id[target_id] for source_key, target_id in resolved.items()}
 
 
 async def _fail_if_generation_dead(uow: UoW, store_id: str) -> None:

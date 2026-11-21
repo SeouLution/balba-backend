@@ -154,6 +154,10 @@ def unreadable_lines_notice(purchased_on: date, supplier_name: str, line_count: 
     return f"{month_day(purchased_on)} {supplier_name} 영수증에서 {line_count}줄은 읽지 못해서 뺐어요"
 
 
+def unknown_lines_notice(purchased_on: date, supplier_name: str, line_count: int) -> str:
+    return f"{month_day(purchased_on)} {supplier_name} 영수증에서 재료 목록에 없는 {line_count}줄은 뺐어요"
+
+
 def push_message(slot: str, top_menu_name: str, planned: Decimal, menu_count: int) -> tuple[str, str]:
     title = "내일 준비량이 나왔어요" if slot == "NIGHT" else "오늘 미리 만들어둘 양"
     return title, f"{top_menu_name} {qty_text(planned)}{MENU_UNIT} 등 {menu_count}개 메뉴"

@@ -537,7 +537,9 @@ async def test_concurrent_requests_on_one_store_are_serialized(api, deps, runner
     assert saved[0].adjusted in quantities
 
     image = receipt_image(
-        "대한식자재", "2026-11-08", [{"name": "계란 특란", "amount": 60, "unit": "개", "linePrice": 17800}]
+        "대한식자재",
+        "2026-11-08",
+        [{"name": "계란 특란", "amount": 60, "unit": "개", "linePrice": 17800, "match": "계란", "kind": "exact"}],
     )
     scan_id = await helpers.scan_receipts(api, runner, store_id, [image])
     await asyncio.gather(*(api.call("confirmReceiptScan", 204, storeId=store_id, scanId=scan_id) for _ in range(5)))
