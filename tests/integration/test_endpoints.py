@@ -123,7 +123,6 @@ async def test_xlsx_file_is_parsed(api, deps, runner, tmp_path):
         1,
         {"from": "2026-11-09", "to": "2026-11-09"},
     )
-    assert (await helpers.fetch_all(deps, "SELECT price FROM menu"))[0].price == 4000
 
 
 async def test_receipt_upload_limits(api, deps):
@@ -153,46 +152,10 @@ async def test_receipt_upload_limits(api, deps):
     assert len((await helpers.fetch_all(deps, "SELECT images FROM receipt_scan"))[0].images) == 30
 
 
-# ───────── 핵심 재료 · 레시피 ─────────
+# ───────── 레시피 ─────────
 
 
-async def test_core_ingredients_replace_the_whole_set(api, deps, runner):
-    ids = await onboard(api, deps, runner)
-    store_id, ingredients = ids["storeId"], ids["ingredients"]
-    other_store = await onboard(api, deps, runner)
-
-    await api.call("setCoreIngredients", 422, storeId=store_id, json={"ingredientIds": []})
-    await api.call(
-        "setCoreIngredients", 422, storeId=store_id, json={"ingredientIds": [ingredients["김"], ingredients["김"]]}
-    )
-    foreign = other_store["ingredients"]["김"]
-    await api.call("setCoreIngredients", 404, storeId=store_id, json={"ingredientIds": [ingredients["김"], foreign]})
-    core = await helpers.fetch_all(
-        deps, "SELECT name FROM ingredient WHERE status = 'CORE' AND store_id = :id ORDER BY name", id=store_id
-    )
-    assert [row.name for row in core] == ["계란", "떡", "어묵"]
-
-    await api.call(
-        "setCoreIngredients", 204, storeId=store_id, json={"ingredientIds": [ingredients["김"], ingredients["계란"]]}
-    )
-    await api.call(
-        "setCoreIngredients", 204, storeId=store_id, json={"ingredientIds": [ingredients["계란"], ingredients["김"]]}
-    )
-    core = await helpers.fetch_all(
-        deps, "SELECT name FROM ingredient WHERE status = 'CORE' AND store_id = :id ORDER BY name", id=store_id
-    )
-    assert [row.name for row in core] == ["계란", "김"]
-    assert await helpers.count(deps, "recipe_item") == 12
-    recipes = (await api.call("listRecipes", 200, storeId=store_id)).json()["items"]
-    by_menu = {item["menu"]["name"]: [line["ingredient"]["name"] for line in item["items"]] for item in recipes}
-    assert by_menu == {"김밥": sorted(["계란", "김"], key=lambda name: ingredients[name]), "떡볶이": [], "어묵탕": []}
-    other_core = await helpers.fetch_all(
-        deps, "SELECT count(*) AS n FROM ingredient WHERE status = 'CORE' AND store_id = :id", id=other_store["storeId"]
-    )
-    assert other_core[0].n == 3
-
-
-async def test_save_recipes_replaces_only_core_items_of_listed_menus(api, deps, runner):
+async def test_save_recipes_replaces_whole_recipe_of_listed_menus(api, deps, runner):
     ids = await onboard(api, deps, runner)
     store_id, ingredients, menus = ids["storeId"], ids["ingredients"], ids["menus"]
 
@@ -210,7 +173,6 @@ async def test_save_recipes_replaces_only_core_items_of_listed_menus(api, deps, 
 
     before = await recipe_rows()
     await api.call("saveRecipes", 422, storeId=store_id, json={"items": []})
-    await api.call("saveRecipes", 422, storeId=store_id, json=body("김밥", [("김", 1)]))
     await api.call("saveRecipes", 422, storeId=store_id, json=body("김밥", [("계란", 1), ("계란", 2)]))
     await api.call("saveRecipes", 422, storeId=store_id, json=body("김밥", [("계란", -1)]))
     mixed = {"items": body("떡볶이", [("어묵", 70)])["items"] + [{"menuId": "mn_missing", "items": []}]}
@@ -228,12 +190,12 @@ async def test_save_recipes_replaces_only_core_items_of_listed_menus(api, deps, 
         ("어묵탕", "어묵", 150.0),
     ]
     await api.call("saveRecipes", 204, storeId=store_id, json=body("김밥", []))
-    assert [row[:2] for row in await recipe_rows()][:2] == [("김밥", "김"), ("김밥", "단무지")]
+    assert [row[0] for row in await recipe_rows()] == ["떡볶이", "떡볶이", "어묵탕"]
 
     await helpers.execute(deps, "UPDATE store SET generation_status = 'GENERATING' WHERE id = :id", id=store_id)
     await api.call("saveRecipes", 422, storeId=store_id, json=body("떡볶이", [("어묵", 1)]))
-    assert (await api.call("listRecipes", 200, storeId=store_id)).json() == {"items": []}
-    assert (await api.call("listIngredientCandidates", 200, storeId=store_id)).json()["items"] == []
+    generating = (await api.call("listRecipes", 200, storeId=store_id)).json()
+    assert generating == {"generationStatus": "GENERATING", "items": []}
 
 
 # ───────── 준비량 · 발주 ─────────
@@ -250,14 +212,14 @@ async def test_adjust_forecast_rules(api, deps, runner):
     assert today.json() == {
         "item": {
             "menu": {"id": gimbap, "name": "김밥"},
-            "unit": "줄",
+            "unit": "인분",
             "recommended": 50,
             "planned": 12.345679,
             "comparison": {"direction": "SIMILAR", "diff": 0},
             "eventDiff": 0,
             "previousRecommended": None,
             "produced": None,
-            "summaryText": "지난 4주 화요일 평균 50줄",
+            "summaryText": "평소 화요일 50인분",
         },
         "order": None,
     }
@@ -304,7 +266,7 @@ async def test_order_plan_and_purchase_order_rules(api, deps, runner):
             ],
         }
 
-    egg = [("계란", 2)]
+    egg = [("계란", 60)]
     invalid_bodies = [
         {"targetDate": "2026-11-11", "suppliers": []},
         order(대한식자재=[("계란", 1), ("계란", 2)]),
@@ -326,10 +288,10 @@ async def test_order_plan_and_purchase_order_rules(api, deps, runner):
     assert await helpers.count(deps, "purchase_order") == 0
     assert (await api.call("listPurchaseOrders", 200, storeId=store_id)).json() == {"items": []}
 
-    await api.call("createPurchaseOrders", 201, storeId=store_id, json=order(대한식자재=[("계란", 2), ("어묵", 0)]))
+    await api.call("createPurchaseOrders", 201, storeId=store_id, json=order(대한식자재=[("계란", 60), ("어묵", 0)]))
     await api.call("createPurchaseOrders", 201, storeId=store_id, json=order(대한식자재=egg))
     lines = await helpers.fetch_all(deps, "SELECT quantity FROM purchase_order_line")
-    assert [float(line.quantity) for line in lines] == [2.0, 2.0]
+    assert [float(line.quantity) for line in lines] == [60.0, 60.0]
     listed = (await api.call("listPurchaseOrders", 200, storeId=store_id)).json()["items"]
     assert len(listed) == 2 and all(item["totalAmount"] == 17800 for item in listed)
     assert (await api.call("listPurchaseOrders", 200, storeId=other["storeId"])).json() == {"items": []}
@@ -353,59 +315,3 @@ async def test_closed_target_day_has_no_forecast_or_order(api, deps, runner):
     assert home["order"] is None and home["banners"] == []
     plan = (await api.call("getOrderPlan", 200, storeId=store_id, targetDate="2026-11-11")).json()
     assert plan == {"targetDate": "2026-11-11", "events": [], "usualTotal": None, "suppliers": []}
-    deps.clock.fixed = kst("2026-11-11T18:00:00")
-    closed_today = (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()
-    assert closed_today == {"date": "2026-11-11", "baseTime": "17:00", "recommendations": []}
-    menu_id = (await helpers.fetch_all(deps, "SELECT id FROM menu WHERE name = '김밥'"))[0].id
-    body = {"menuId": menu_id, "discount": {"type": "PERCENT", "value": 10}, "startTime": "19:00", "quantity": 1}
-    await api.call("createDiscount", 422, storeId=store_id, json=body)
-
-
-# ───────── 할인 이력 ─────────
-
-
-async def test_discount_history_ranges_follow_korean_dates(api, deps, runner):
-    ids = await onboard(api, deps, runner)
-    store_id = ids["storeId"]
-    other = await onboard(api, deps, runner)
-    body = {
-        "menuId": ids["menus"]["김밥"],
-        "discount": {"type": "PERCENT", "value": 12.5},
-        "startTime": "19:00",
-        "quantity": 3,
-    }
-
-    created = {}
-    for moment in ("2026-11-08T23:59:59", "2026-11-09T00:00:00", "2026-11-10T23:59:59", "2026-11-11T00:00:00"):
-        deps.clock.fixed = kst(moment)
-        created[moment] = (await api.call("createDiscount", 201, storeId=store_id, json=body)).json()
-    assert [item["date"] for item in created.values()] == ["2026-11-08", "2026-11-09", "2026-11-10", "2026-11-11"]
-    first = created["2026-11-08T23:59:59"]
-    assert (first["originalPrice"], first["discountedPrice"], first["revenueReduction"]) == (4000, 3500, 1500)
-    assert first["discount"] == {"type": "PERCENT", "value": 12.5} and "wasteCostAvoided" not in first
-
-    async def listed(time_range=None):
-        params = {"range": time_range} if time_range else None
-        items = (await api.call("listDiscounts", 200, storeId=store_id, params=params)).json()["items"]
-        return [item["id"] for item in items]
-
-    deps.clock.fixed = kst("2026-11-11T00:00:00")
-    ids_by_moment = {moment: item["id"] for moment, item in created.items()}
-    assert await listed() == [ids_by_moment["2026-11-11T00:00:00"]]
-    assert await listed("THIS_WEEK") == [
-        ids_by_moment["2026-11-11T00:00:00"],
-        ids_by_moment["2026-11-10T23:59:59"],
-        ids_by_moment["2026-11-09T00:00:00"],
-    ]
-    assert len(await listed("ALL")) == 4
-    deps.clock.fixed = kst("2026-11-10T12:00:00")
-    assert await listed() == [ids_by_moment["2026-11-10T23:59:59"]]
-    await api.call("listDiscounts", 422, storeId=store_id, params={"range": "MONTH"})
-    assert (await api.call("listDiscounts", 200, storeId=other["storeId"], params={"range": "ALL"})).json() == {
-        "items": []
-    }
-
-    await helpers.execute(deps, "UPDATE menu SET price = NULL WHERE id = :id", id=ids["menus"]["김밥"])
-    await api.call("createDiscount", 422, storeId=store_id, json=body)
-    history = (await api.call("listDiscounts", 200, storeId=store_id, params={"range": "ALL"})).json()["items"]
-    assert {item["originalPrice"] for item in history} == {4000}

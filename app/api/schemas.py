@@ -52,10 +52,6 @@ class PushTokenIn(BaseModel):
     token: StrictStr
 
 
-class CoreIngredientsIn(BaseModel):
-    ingredientIds: list[StrictStr]
-
-
 class RecipeItemIn(BaseModel):
     ingredientId: StrictStr
     quantity: Qty
@@ -110,16 +106,3 @@ class PurchaseOrderSupplierIn(BaseModel):
 class PurchaseOrderCreateIn(BaseModel):
     targetDate: IsoDate
     suppliers: list[PurchaseOrderSupplierIn]
-
-
-class DiscountValueIn(BaseModel):
-    type: Literal["PERCENT", "AMOUNT"]
-    value: Qty
-
-
-class DiscountCreateIn(BaseModel):
-    recommendationId: StrictStr | None = None
-    menuId: StrictStr
-    discount: DiscountValueIn
-    startTime: LocalTimeText
-    quantity: Qty

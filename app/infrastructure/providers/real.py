@@ -35,9 +35,9 @@ from app.infrastructure.providers.ports import (
     ReceiptReading,
     ReceiptReadingLine,
     RecipeDraft,
-    RecipeDraftIngredient,
     RecipeDraftItem,
     RecipeDraftMenu,
+    WeatherObservation,
 )
 from app.shared.types import KST
 
@@ -86,7 +86,6 @@ class ColumnsOut(BaseModel):
     date: str
     menuName: str
     quantity: str
-    amount: str | None
     posSystem: Literal["TOSS_POS", "OKPOS", "BAEMIN_POS", "OTHER"]
 
 
@@ -97,11 +96,9 @@ class ReceiptMatchOut(BaseModel):
 
 class ReceiptLineOut(BaseModel):
     rawProductName: str
-    quantity: float | None
-    unit: str | None
-    unitPrice: int | None
-    contentQuantity: float | None
-    usageUnit: str | None
+    amount: float | None
+    unit: Literal["개", "g"] | None
+    linePrice: int | None
     match: ReceiptMatchOut
 
 
@@ -115,7 +112,7 @@ class ReceiptOut(BaseModel):
 
 class RecipeItemOut(BaseModel):
     ingredientName: str
-    usageUnit: str
+    unit: Literal["개", "g"]
     usagePerMenu: float
 
 
@@ -124,23 +121,20 @@ class RecipeMenuOut(BaseModel):
     items: list[RecipeItemOut]
 
 
-class RecipeIngredientOut(BaseModel):
-    name: str
-    purchaseUnit: str | None
-    contentQuantity: float | None
-
-
 class RecipesOut(BaseModel):
     menus: list[RecipeMenuOut]
-    ingredients: list[RecipeIngredientOut]
 
 
 def _decimal(value: float | None) -> Decimal | None:
     return None if value is None else Decimal(str(value))
 
 
+def _named_units(ingredient_units: dict[str, str]) -> list[dict]:
+    return [{"name": name, "unit": unit} for name, unit in ingredient_units.items()]
+
+
 def to_column_detection(out: ColumnsOut) -> ColumnDetection:
-    return ColumnDetection(out.date, out.menuName, out.quantity, out.amount, out.posSystem)
+    return ColumnDetection(out.date, out.menuName, out.quantity, out.posSystem)
 
 
 def to_receipt_reading(out: ReceiptOut) -> ReceiptReading:
@@ -156,11 +150,9 @@ def to_receipt_reading(out: ReceiptOut) -> ReceiptReading:
         lines=tuple(
             ReceiptReadingLine(
                 raw_product_name=line.rawProductName,
-                quantity=_decimal(line.quantity),
+                amount=_decimal(line.amount),
                 unit=line.unit,
-                unit_price=line.unitPrice,
-                content_quantity=_decimal(line.contentQuantity),
-                usage_unit=line.usageUnit,
+                line_price=line.linePrice,
                 match_name=line.match.ingredientName,
                 match_kind=line.match.kind,
             )
@@ -175,16 +167,12 @@ def to_recipe_draft(out: RecipesOut) -> RecipeDraft:
             RecipeDraftMenu(
                 menu.menuName,
                 tuple(
-                    RecipeDraftItem(item.ingredientName, item.usageUnit, Decimal(str(item.usagePerMenu)))
+                    RecipeDraftItem(item.ingredientName, item.unit, Decimal(str(item.usagePerMenu)))
                     for item in menu.items
                 ),
             )
             for menu in out.menus
-        ),
-        ingredients=tuple(
-            RecipeDraftIngredient(item.name, item.purchaseUnit, _decimal(item.contentQuantity))
-            for item in out.ingredients
-        ),
+        )
     )
 
 
@@ -222,22 +210,25 @@ class ClaudeAdapter:
         system = (
             "POS에서 내려받은 판매 파일의 첫 줄(열 이름)과 그 아래 몇 줄을 보고 열을 고른다. "
             "date는 판매 날짜, menuName은 상품(메뉴) 이름, quantity는 판매 수량 열의 이름이다. "
-            "amount는 그 줄의 판매 금액(수량×단가) 열의 이름이고 없으면 null이다. "
             "열 이름은 주어진 첫 줄에 있는 글자 그대로 답한다. "
             "posSystem은 열 구성으로 보아 TOSS_POS, OKPOS, BAEMIN_POS 중 하나가 분명할 때만 그 값이고 아니면 OTHER다."
         )
         table = json.dumps({"header": header, "rows": sample_rows}, ensure_ascii=False)
         return to_column_detection(await self._parse(ColumnsOut, system, [{"type": "text", "text": table}]))
 
-    async def read_receipt(self, jpeg: bytes, ingredient_names: list[str]) -> ReceiptReading:
+    async def read_receipt(self, jpeg: bytes, ingredient_units: dict[str, str]) -> ReceiptReading:
         system = (
             "식자재 거래 영수증 사진 한 장을 읽는다. 영수증으로 읽을 수 없으면 readable=false다. "
             "supplierName은 판매한 거래처 상호, phone은 거래처 전화번호(없으면 null), "
             "purchasedOn은 거래 날짜(YYYY-MM-DD, 읽을 수 없으면 null)다. "
-            "lines에는 품목 줄을 영수증에 적힌 순서대로 넣는다. rawProductName은 적힌 품명 그대로, "
-            "quantity는 산 수량, unit은 그 수량의 구매 단위(판, 봉, kg 등), unitPrice는 구매 단위 1개의 가격(원)이다. "
-            "읽을 수 없는 값은 null로 둔다. 품명에 포장량이 적혀 있을 때만 contentQuantity와 usageUnit을 채운다"
-            "(예: '특란 30구'는 30, 개). "
+            "lines에는 품목 줄을 영수증에 적힌 순서대로 넣는다. rawProductName은 적힌 품명 그대로다. "
+            "amount는 그 줄에서 산 전체 양이고 unit은 그 단위로 '개' 또는 'g'만 쓴다. "
+            "amount는 품명이나 단위에 적힌 포장량 × 산 수량이다"
+            "(예: '특란 30구' 2판은 60개, '떡볶이떡 2kg' 3봉은 6000g, '진간장 1.8L' 2통은 3600g). "
+            "낱개로 세는 것(구, 개, 장, 매, 알)은 개, 무게는 g(1kg=1000g), 부피는 1ml=1g으로 보고 g이다. "
+            "주어진 재료 목록에 같은 품목이 있으면 그 재료의 단위로 답한다. "
+            "포장량이 영수증에 없으면('계란 1판') 그 품목이 흔히 팔리는 포장량으로 추정한다. "
+            "linePrice는 그 줄의 금액(원)이고 단가만 적혀 있으면 단가 × 산 수량이다. 읽을 수 없는 값은 null로 둔다. "
             "match는 주어진 재료 이름 목록과의 관계다. 목록의 재료와 같은 것이 분명하면 kind=exact, "
             "같은 재료일 수 있으면 kind=similar이고 ingredientName에 목록의 이름을 그대로 넣는다. "
             "해당하는 재료가 없으면 kind=none, ingredientName=null이다."
@@ -251,29 +242,26 @@ class ClaudeAdapter:
                     "data": base64.standard_b64encode(jpeg).decode("ascii"),
                 },
             },
-            {"type": "text", "text": json.dumps({"ingredientNames": ingredient_names}, ensure_ascii=False)},
+            {"type": "text", "text": json.dumps({"ingredients": _named_units(ingredient_units)}, ensure_ascii=False)},
         ]
         return to_receipt_reading(await self._parse(ReceiptOut, system, content))
 
     async def draft_recipes(
-        self, category: str, menus: list[tuple[str, str]], ingredient_names: list[str]
+        self, category: str, menu_names: list[str], ingredient_units: dict[str, str]
     ) -> RecipeDraft:
         system = (
             "작은 음식점의 메뉴마다 레시피 초안을 만든다. "
             "menus에는 주어진 메뉴를 빠짐없이 넣고 menuName은 주어진 이름 그대로 쓴다. "
-            "items는 그 메뉴 1단위(주어진 단위)를 만드는 데 드는 재료다. ingredientName은 이미 있는 재료 목록에 "
-            "같은 재료가 있으면 그 이름을 그대로 쓴다. usageUnit은 재료를 세는 사용 단위(개, g, ml, 장 등)이고 "
-            "같은 재료는 모든 메뉴에서 같은 단위를 쓴다. usagePerMenu는 메뉴 1단위당 사용량이다. "
-            "무게나 부피로 파는 재료(어묵, 떡, 고기, 채소, 양념, 기름 등)는 usageUnit을 g 또는 ml로 쓰고, "
-            "계란이나 김처럼 낱개로 세어 파는 재료만 개·장을 쓴다. "
-            "ingredients에는 items에 나온 재료마다 흔히 사는 구매 단위(purchaseUnit)와 구매 단위 1개에 든 "
-            "사용 단위 수량(contentQuantity)의 추정값을 넣는다. 모르면 null이다. "
-            "가격, 거래처, 유통기한은 답하지 않는다."
+            "items는 그 메뉴 1인분을 만드는 데 드는 재료다. ingredientName은 이미 있는 재료 목록에 "
+            "같은 재료가 있으면 그 이름과 단위를 그대로 쓴다. unit은 '개' 또는 'g'만 쓰고 "
+            "같은 재료는 모든 메뉴에서 같은 단위를 쓴다. usagePerMenu는 메뉴 1인분당 사용량이다. "
+            "계란이나 김처럼 낱개로 세는 재료만 개를 쓰고, 그 밖의 재료(어묵, 떡, 고기, 채소, 양념, 기름 등)는 "
+            "g을 쓴다. 액체는 1ml=1g으로 본다. 가격, 거래처, 유통기한은 답하지 않는다."
         )
         request = {
             "storeCategory": category,
-            "menus": [{"menuName": name, "unit": unit} for name, unit in menus],
-            "existingIngredientNames": ingredient_names,
+            "menus": [{"menuName": name} for name in menu_names],
+            "existingIngredients": _named_units(ingredient_units),
         }
         text = json.dumps(request, ensure_ascii=False)
         return to_recipe_draft(await self._parse(RecipesOut, system, [{"type": "text", "text": text}]))
@@ -433,6 +421,54 @@ class KmaWeather:
                     break
                 page += 1
         return to_day_weather(items, target_date)
+
+
+KMA_OBSERVATION_URL = "https://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList"
+KMA_OBSERVATION_PAGE_ROWS = 999
+
+
+def to_weather_observations(items: list[dict[str, str]]) -> list[WeatherObservation]:
+    observations = []
+    for item in items:
+        try:
+            observed_on = date.fromisoformat(item["tm"])
+        except (KeyError, ValueError):
+            raise ProviderInvalidPayload("observation item is malformed") from None
+        max_temperature = _number(item.get("maxTa"))
+        if max_temperature is not None:
+            precipitation = _number(item.get("sumRn")) or Decimal(0)
+            observations.append(WeatherObservation(observed_on, max_temperature, precipitation))
+    return observations
+
+
+class KmaObservations:
+    def __init__(self, service_key: str, station: str):
+        self.service_key = service_key
+        self.station = station
+
+    async def daily_observations(self, start: date, end: date) -> list[WeatherObservation]:
+        items: list[dict[str, str]] = []
+        page = 1
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
+            while True:
+                params = {
+                    "serviceKey": self.service_key,
+                    "pageNo": page,
+                    "numOfRows": KMA_OBSERVATION_PAGE_ROWS,
+                    "dataType": "XML",
+                    "dataCd": "ASOS",
+                    "dateCd": "DAY",
+                    "startDt": start.strftime("%Y%m%d"),
+                    "endDt": end.strftime("%Y%m%d"),
+                    "stnIds": self.station,
+                }
+                response = await get_with_retry(client, KMA_OBSERVATION_URL, params=params)
+                page_items, total = parse_kma_items(response.text)
+                items += page_items
+                if not page_items or len(items) >= total:
+                    break
+                page += 1
+        return to_weather_observations(items)
 
 
 # ───────── 서울시 문화행사 · 실시간 도시데이터 ─────────
@@ -608,7 +644,7 @@ class WebPushSender:
         return True
 
 
-def real_providers(env: Mapping[str, str]) -> Providers:
+def real_providers(env: Mapping[str, str], observation_station: str) -> Providers:
     claude = ClaudeAdapter(env["ANTHROPIC_API_KEY"], env.get("ANTHROPIC_MODEL") or "claude-opus-5-5")
     return Providers(
         columns=claude,
@@ -616,6 +652,7 @@ def real_providers(env: Mapping[str, str]) -> Providers:
         recipes=claude,
         geocoder=KakaoGeocoder(env["KAKAO_REST_API_KEY"]),
         weather=KmaWeather(env["KMA_SERVICE_KEY"]),
+        observations=KmaObservations(env["KMA_SERVICE_KEY"], observation_station),
         events=SeoulEvents(env["SEOUL_OPENAPI_KEY"]),
         crowd=SeoulCrowd(env.get("SEOUL_CITYDATA_KEY") or env["SEOUL_OPENAPI_KEY"]),
         push=WebPushSender(env["VAPID_PRIVATE_KEY"], env["VAPID_SUBJECT"]),

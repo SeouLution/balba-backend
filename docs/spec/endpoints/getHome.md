@@ -22,7 +22,7 @@
 
 ## 책임과 경계
 
-views / `GetHome.execute(StoreContext) → HomeResponse`. ForecastReader, ContextReader, `ordering.PlanOrder`의 결과를 조합한다. 발주·재고 규칙을 여기서 다시 구현하지 않는다.
+views / `GetHome.execute(StoreContext) → HomeResponse`. ForecastReader, ContextReader, `ordering.PlanOrder`, `ordering.FindLowStock`의 결과를 조합한다. 발주·재고·재고 부족 규칙을 여기서 다시 구현하지 않는다.
 
 ## 처리 순서
 
@@ -31,13 +31,13 @@ views / `GetHome.execute(StoreContext) → HomeResponse`. ForecastReader, Contex
 3. `tiles`: 저장된 날씨가 없으면 `weather` 키를 생략한다. `events`는 반경 내 행사 목록이며 없으면 빈 배열이다. 행사는 [공통 EventSummary 규칙](../03-http-contract.md)에 따라 변환한다.
 4. `forecast.items`는 예측이 있는 메뉴 중 상위 3개(C02), `totalMenuCount`는 전체 메뉴 수. 예측이 없으면 `items=[]`. `planned`는 adjusted 우선이고 0도 그대로 준다. `produced`와 `previousRecommended`는 TODAY에서만 값을 주고 TOMORROW에서는 null이다.
 5. `order`: TOMORROW에서 `PlanOrder(targetDate)` 결과에 줄이 있으면 `{supplierCount: 거래처 수, estimatedTotal: C05 금액 규칙}`, 줄이 없으면 null. TODAY에서는 `order` 키를 생략한다.
-6. `banners`: [C07](../domain/calculations.md) 조건에 맞는 것만 FIRST_FORECAST, OVERNIGHT_CHANGE, EVENT_TODAY, DELIVERY_EXPECTED 순으로 넣는다.
+6. `banners`: [C07](../domain/calculations.md) 조건에 맞는 것만 FIRST_FORECAST, OVERNIGHT_CHANGE, EVENT_TODAY, DELIVERY_EXPECTED, LOW_STOCK 순으로 넣는다. LOW_STOCK은 `FindLowStock(targetDate)` 결과가 1개 이상일 때 TODAY·TOMORROW 모두에서 넣는다([C06](../domain/calculations.md), D41).
 7. `businessHours`에 가게의 월~일 영업시간을 담아 `storeName`, `view`, `targetDate`, `tiles`, `banners`, `forecast`와 함께 반환한다. 휴무일에는 `day`와 `closed`만 포함한다.
 
 ## 실패·읽기 일관성
 
-store 없음 404, DB 오류 500. GET에서 외부 API 호출, 작업 등록, 예측 계산·저장을 하지 않는다. 예측은 저장된 값을 읽고, 발주 요약은 같은 읽기 트랜잭션의 데이터로 계산한다.
+store 없음 404, DB 오류 500. GET에서 외부 API 호출, 작업 등록, 예측 계산·저장을 하지 않는다. 예측은 저장된 값을 읽고, 발주 요약과 재고 부족 목록은 같은 읽기 트랜잭션의 데이터로 계산한다. 재고 부족 계산에서 예측 행이 없는 날의 예상 수량은 계산만 하고 저장하지 않는다.
 
 ## 완료 조건
 
-19:59/20:00/23:59/00:00 KST, `DEMO_NOW`, 휴무, 온보딩 직후(order=null), 영수증 확정 뒤 order, 행사 없음·반경 경계, 일부 단가만 아는 경우의 합계, 배너 4종의 조건·문구를 검증한다. getOrderPlan과 같은 시각에 호출하면 거래처 수와 합계가 일치한다.
+19:59/20:00/23:59/00:00 KST, `DEMO_NOW`, 휴무, 온보딩 직후(order=null), 영수증 확정 뒤 order, 행사 없음·반경 경계, 일부 단가만 아는 경우의 합계, 배너 5종의 조건·문구, LOW_STOCK의 경계(재고가 예상 사용량과 같으면 없음)와 이미 발주한 재료의 문구(F03)를 검증한다. getOrderPlan과 같은 시각에 호출하면 거래처 수와 합계가 일치한다.

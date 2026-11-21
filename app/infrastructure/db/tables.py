@@ -20,6 +20,7 @@ store = Table(
     Column("push_token", Text),
     Column("generation_status", Text),
     Column("first_forecast_at", TIMESTAMP),
+    Column("forecast_model", JSONB),
     Column("created_at", TIMESTAMP),
 )
 
@@ -29,8 +30,6 @@ menu = Table(
     Column("id", Text, primary_key=True),
     Column("store_id", Text),
     Column("name", Text),
-    Column("unit", Text),
-    Column("price", BigInteger),
 )
 
 ingredient = Table(
@@ -39,11 +38,7 @@ ingredient = Table(
     Column("id", Text, primary_key=True),
     Column("store_id", Text),
     Column("name", Text),
-    Column("status", Text),
-    Column("usage_unit", Text),
-    Column("purchase_unit", Text),
-    Column("content_quantity", QTY),
-    Column("tags", JSONB),
+    Column("unit", Text),
 )
 
 recipe_item = Table(
@@ -110,7 +105,7 @@ receipt_line = Table(
     Column("ingredient_id", Text),
     Column("product_name", Text),
     Column("quantity", QTY),
-    Column("unit_price", BigInteger),
+    Column("unit_price", QTY),
 )
 
 forecast = Table(
@@ -136,6 +131,14 @@ weather = Table(
     Column("condition", Text),
     Column("summary_text", Text),
     Column("change_text", Text),
+)
+
+weather_observation = Table(
+    "weather_observation",
+    metadata,
+    Column("observed_on", Date, primary_key=True),
+    Column("max_temperature_c", Numeric(5, 1)),
+    Column("precipitation_mm", Numeric(7, 1)),
 )
 
 event = Table(
@@ -174,22 +177,6 @@ purchase_order_line = Table(
     Column("purchase_order_id", Text, primary_key=True),
     Column("ingredient_id", Text, primary_key=True),
     Column("quantity", QTY),
-)
-
-discount = Table(
-    "discount",
-    metadata,
-    Column("id", Text, primary_key=True),
-    Column("menu_id", Text),
-    Column("discount_type", Text),
-    Column("discount_value", QTY),
-    Column("start_time", Time),
-    Column("quantity", QTY),
-    Column("original_price", BigInteger),
-    Column("waste_cost_avoided", BigInteger),
-    Column("revenue_reduction", BigInteger),
-    Column("promo_text", Text),
-    Column("created_at", TIMESTAMP),
 )
 
 background_job = Table(

@@ -15,7 +15,7 @@ from app.infrastructure.files import tabular
 from app.infrastructure.jobs import queue
 from app.infrastructure.providers.ports import ProviderInvalidPayload
 from app.modules import catalog, stores
-from app.shared.types import KST, InvalidRequest, NotFound, new_id, normalize_name, round_half_up
+from app.shared.types import KST, InvalidRequest, NotFound, new_id, normalize_name
 
 SALES_EXTENSIONS = {"xlsx", "xls", "csv"}
 SAMPLE_ROW_COUNT = 20
@@ -28,7 +28,6 @@ class SalesRecord:
     sold_on: date
     menu_name: str
     quantity: Decimal
-    amount: Decimal | None
 
 
 @dataclass(frozen=True)
@@ -41,7 +40,7 @@ class SalesSnapshot:
         return {(menu_id, sold_on): quantity for menu_id, sold_on, quantity in self.rows}
 
     def has_record(self, day: date) -> bool:
-        return any(start <= day <= end for start, end in self.covered_ranges)
+        return day in self.covered_days
 
     def sold(self, menu_id: str, day: date) -> Decimal | None:
         """판매 기록이 있는 날이면 판매량(행이 없으면 0), 기록이 없는 날이면 None."""
@@ -49,11 +48,16 @@ class SalesSnapshot:
             return None
         return self._cells.get((menu_id, day), Decimal(0))
 
+    @cached_property
+    def covered_days(self) -> frozenset[date]:
+        return frozenset(
+            start + timedelta(days=offset)
+            for start, end in self.covered_ranges
+            for offset in range((end - start).days + 1)
+        )
+
     def covered_day_count(self) -> int:
-        days = set()
-        for start, end in self.covered_ranges:
-            days.update(start + timedelta(days=offset) for offset in range((end - start).days + 1))
-        return len(days)
+        return len(self.covered_days)
 
 
 @dataclass(frozen=True)
@@ -131,7 +135,6 @@ def parse_sales_rows(rows: list[list], mapping: dict) -> list[SalesRecord]:
         date_idx = header.index(mapping["date"])
         menu_idx = header.index(mapping["menuName"])
         quantity_idx = header.index(mapping["quantity"])
-        amount_idx = header.index(mapping["amount"]) if mapping.get("amount") else None
     except ValueError as error:
         raise ProviderInvalidPayload("column mapping names a column that is not in the header") from error
 
@@ -145,8 +148,7 @@ def parse_sales_rows(rows: list[list], mapping: dict) -> list[SalesRecord]:
         menu_name = normalize_name(str(cell(row, menu_idx) or ""))
         if sold_on is None or quantity is None or not menu_name:
             continue
-        amount = _parse_number(cell(row, amount_idx)) if amount_idx is not None else None
-        records.append(SalesRecord(sold_on, menu_name, quantity, amount))
+        records.append(SalesRecord(sold_on, menu_name, quantity))
     return records
 
 
@@ -249,12 +251,7 @@ async def parse_import(deps: Container, job: queue.Job) -> None:
         raise queue.PermanentJobFailure("sales file has no header row")
     sample = [["" if cell is None else str(cell) for cell in sample_row] for sample_row in body[:SAMPLE_ROW_COUNT]]
     detection = await deps.providers.columns.detect_columns(header, sample)
-    mapping = {
-        "date": detection.date,
-        "menuName": detection.menu_name,
-        "quantity": detection.quantity,
-        "amount": detection.amount,
-    }
+    mapping = {"date": detection.date, "menuName": detection.menu_name, "quantity": detection.quantity}
     records = parse_sales_rows(rows, mapping)
     if not records:
         raise queue.PermanentJobFailure("sales file has no readable sales row")
@@ -287,26 +284,6 @@ async def parse_import(deps: Container, job: queue.Job) -> None:
         await queue.succeed(uow, job)
 
 
-def latest_prices(records: list[SalesRecord]) -> dict[str, int]:
-    """메뉴별로 가장 최근 날짜의 금액 합 ÷ 수량 합. 수량 합이 0 이하면 건너뛴다."""
-    latest_day: dict[str, date] = {}
-    for record in records:
-        if record.amount is not None:
-            latest_day[record.menu_name] = max(latest_day.get(record.menu_name, record.sold_on), record.sold_on)
-    prices = {}
-    for menu_name, day in latest_day.items():
-        same_day = [
-            record
-            for record in records
-            if record.menu_name == menu_name and record.sold_on == day and record.amount is not None
-        ]
-        quantity = sum((record.quantity for record in same_day), Decimal(0))
-        amount = sum((record.amount for record in same_day), Decimal(0))
-        if quantity > 0 and amount >= 0:
-            prices[menu_name] = round_half_up(amount / quantity)
-    return prices
-
-
 async def apply_import(deps: Container, job: queue.Job) -> None:
     store_id, import_id = job.payload["storeId"], job.payload["importId"]
     async with deps.db.read() as uow:
@@ -324,13 +301,7 @@ async def apply_import(deps: Container, job: queue.Job) -> None:
         if current.status != "APPLYING":
             await queue.succeed(uow, job)
             return
-        prices = latest_prices(records)
-        menu_names = sorted({record.menu_name for record in records})
-        menus = await catalog.upsert_imported_menus(
-            uow,
-            store_id,
-            [catalog.MenuImportDraft(name, deps.policy.menu_unit_for(name), prices.get(name)) for name in menu_names],
-        )
+        menus = await catalog.upsert_imported_menus(uow, store_id, sorted({record.menu_name for record in records}))
         totals: dict[tuple[str, date], Decimal] = {}
         for record in records:
             cell = (menus[record.menu_name].id, record.sold_on)
@@ -354,7 +325,5 @@ async def apply_import(deps: Container, job: queue.Job) -> None:
             )
         else:
             await stores.set_generation_status(uow, store_id, "READY")
-        today = deps.clock.context(store_id).local_date
-        for target_date in (today, today + timedelta(days=1)):
-            await queue.enqueue_forecast(uow, store_id, target_date, "DATA_CHANGED", job.id)
+        await queue.enqueue(uow, "FIT_FORECAST_MODEL", {"storeId": store_id, "importId": import_id}, f"fit:{import_id}")
         await queue.succeed(uow, job)

@@ -11,4 +11,4 @@
 | `kakao_address_live.json` | 2026-11-20 카카오 로컬 API 주소 검색을 실제 키로 호출한 응답 |
 | `kma_vilage_fcst_live.xml` | 2026-11-20 기상청 단기예보 조회서비스를 실제 키로 호출한 응답의 첫 30건 |
 
-Claude API와 웹 푸시는 실제 호출 응답 fixture가 없다.
+Claude API, 웹 푸시, 기상청 지상(종관, ASOS) 일자료는 실제 호출 응답 fixture가 없다. ASOS 일자료는 키를 넣고 `python -m app.infrastructure.providers.check`를 실행하면 `kma_asos_daily_live.xml`로 저장된다.

@@ -32,9 +32,9 @@ forecasting / `SetProduction.execute(StoreContext, date, menuId, quantity:NonNeg
 2. store를 잠그고 `produced`를 요청 수량으로 교체한다. 이전 값보다 작아도 정정으로 받는다. 0도 저장한다.
 3. commit 후 204. recommended/adjusted/daily_sales/receipt_line은 바꾸지 않는다.
 
-## 재고에 미치는 영향
+## 계산에 미치는 영향
 
-판매 기록이 없는 날의 재료 사용량은 만든 양으로 계산한다([C04](../domain/calculations.md), D03). 그래서 이 값은 다음 조회부터 재고와 발주의 stock에 반영된다. 할인 추천 수량도 이 값에서 추천 준비량을 뺀 값이다([C06](../domain/calculations.md), D37). 기록하지 않으면 최종 준비량(planned)을 만든 것으로 본다.
+없다. 만든 양은 화면 표시용이다(D43). 재고는 영수증 입고와 POS 판매량만으로 계산하므로([C04](../domain/calculations.md), D03) 이 값을 바꿔도 재고, 발주, 재고 부족 안내가 달라지지 않는다.
 
 ## 실패·재요청
 
@@ -42,4 +42,4 @@ store/menu/forecast 없음은 404, 날짜/수량 오류는 422. 같은 PUT을 �
 
 ## 완료 조건
 
-50을 두 번 보내도 50, 50→0 정정, TODAY 홈에 produced 반영, 내일/어제 날짜 거절, daily_sales 불변, produced를 바꾸면 그날 재고 계산이 달라지는 것(F02)을 검증한다.
+50을 두 번 보내도 50, 50→0 정정, TODAY 홈에 produced 반영, 내일/어제 날짜 거절, daily_sales 불변, produced를 바꿔도 재고가 그대로인 것(F02)을 검증한다.

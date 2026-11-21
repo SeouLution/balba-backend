@@ -2,7 +2,7 @@
 
 ## 경로와 DTO
 
-25개 operation은 `/v1` prefix 아래에 등록한다. 엔드포인트 문서에는 OpenAPI처럼 prefix를 뺀 경로를 쓴다. 기존 루트 `/health`, `/openapi.yaml`, `/scalar`는 그대로 유지한다. operationId를 명시하고 정적 OpenAPI와 런타임 라우트를 계약 테스트로 대조한다.
+가게 API 20개 operation은 `/v1` prefix 아래에 등록한다. 엔드포인트 문서에는 OpenAPI처럼 prefix를 뺀 경로를 쓴다. 기존 루트 `/health`, `/openapi.yaml`, `/scalar`는 그대로 유지한다. operationId를 명시하고 정적 OpenAPI와 런타임 라우트를 계약 테스트로 대조한다.
 
 request/response 클래스는 별도다. 내부 snake_case와 공개 camelCase는 alias로 연결하고, 응답에 ORM 필드나 내부 diagnostics가 섞이지 않게 명시적 presenter를 둔다. 전체 필드·필수/nullable·enum의 기준은 [openapi.yaml](../../openapi.yaml) 하나다. 이 스펙은 스키마를 다시 옮겨 적지 않는다.
 
@@ -11,8 +11,8 @@ request/response 클래스는 별도다. 내부 snake_case와 공개 camelCase�
 선택 필드는 다음 원칙을 지킨다.
 
 - `required`이면서 nullable이면 반드시 키를 쓰고 값이 없으면 null이다. 예: PriceInfo.unitPrice.
-- 선택이면서 non-nullable이면 모를 때 생략한다. 예: IngredientSummary.usageUnit, Discount.wasteCostAvoided.
-- 선택 nullable은 아래 모듈 규칙에 따라 null을 명시한다. IngredientSummary.purchaseUnit/price/supplier, ForecastItem.previousRecommended/produced가 해당한다.
+- 선택이면서 non-nullable이면 모를 때 생략한다. 예: EventSummary.place.
+- 선택 nullable은 아래 모듈 규칙에 따라 null을 명시한다. IngredientSummary.price/supplier, ForecastItem.previousRecommended/produced가 해당한다.
 - 홈과 발주 계획은 같은 `EventSummary` 변환을 쓴다. 모르는 `place`, `crowdLevel`은 생략하고 `expectedVisitors`, `peakFrom`, `peakTo`, `detailUrl`은 null로 보낸다.
 - 목록은 빈 배열이며 null이 아니다. `NEEDS_CONFIRMATION`의 detection, `NEEDS_REVIEW`의 groups는 조건부 필수다.
 - 204와 본문 없는 202는 진짜 빈 body다. `null`이나 `{}`를 반환하지 않는다.
@@ -22,7 +22,7 @@ request/response 클래스는 별도다. 내부 snake_case와 공개 camelCase�
 1. transport: JSON/멀티파트/날짜/시각/enum/수치형/required 검사.
 2. structural: 항목 중복, 요일 7개, 크기, batch empty 규칙 검사. 수량은 소수 6자리로 반올림해 받는다(D26). NaN·Infinity·음수는 422.
 3. ownership: store 실존 후 모든 하위 ID가 store에 속하는지 검사. 존재하지 않거나 타 store이면 동일하게 404.
-4. state/domain: 현재 상태에서 허용되는 전이, 환산 비율, 가격, 날짜 제약 검사. 실패는 422.
+4. state/domain: 현재 상태에서 허용되는 전이, 날짜 제약 검사. 실패는 422.
 
 알 수 없는 추가 JSON 키는 원본이 `additionalProperties:false`가 아니므로 거부하지 않고 무시한다. 문자열 숫자·bool을 number로 조용히 받지 않는 엄격한 타입 검증을 기본으로 한다. 문자열 정규화는 저장용 이름의 앞뒤 공백 제거/NFC만 수행하며 이름 유사도를 근거로 다른 품목을 자동 병합하지 않는다.
 
@@ -40,18 +40,18 @@ request ID는 헤더/로그에만 쓰고 Error body에 추가하지 않는다. A
 
 ## 날짜·시간·수량
 
-Clock.now()는 요청 시작 시 1회 읽어 StoreContext에 고정한다. 환경변수 `DEMO_NOW`가 있으면 Clock은 항상 그 시각을 돌려준다(D27). 날짜/요일 계산은 `Asia/Seoul`, DB 시점은 UTC. `THIS_WEEK`는 KST 월요일 00:00부터 현재 요청시각까지다. 자정 경계 테스트는 UTC 서버 timezone과 무관해야 한다.
+Clock.now()는 요청 시작 시 1회 읽어 StoreContext에 고정한다. 환경변수 `DEMO_NOW`가 있으면 Clock은 항상 그 시각을 돌려준다(D27). 날짜/요일 계산은 `Asia/Seoul`, DB 시점은 UTC. 자정 경계 테스트는 UTC 서버 timezone과 무관해야 한다.
 
-수량은 [공통 타입](02-boundary-contracts.md)의 Decimal 규칙을 따른다. response number를 문자열로 만들지 않는다. UI의 `+1`은 프론트가 합산 후 절대 수량을 보낸다. API가 한 번 더 증가시키지 않는다.
+수량은 [공통 타입](02-boundary-contracts.md)의 Decimal 규칙을 따른다. 메뉴 수량의 `unit`은 항상 `인분`, 재료 수량의 `unit`은 `개` 또는 `g`다(D46, D47). `PriceInfo.unitPrice`는 재료 단위 1개당 원이고 소수일 수 있다. response number를 문자열로 만들지 않는다. UI의 `+1`은 프론트가 합산 후 절대 수량을 보낸다. API가 한 번 더 증가시키지 않는다.
 
 ## 재요청과 동시성
 
 - PUT는 동일 입력 반복 시 같은 업무 결과. 동시에 다른 값은 store 잠금을 나중에 얻은 요청의 값이 남는다.
 - import confirm은 APPLYING/COMPLETED에서 202 빈 body 재반환. scan confirm은 같은 결정 집합으로 확정된 경우 204, 다른 결정으로 재확정하면 422.
-- purchase order/discount POST에는 공개 idempotency key가 없다. 같은 POST가 다시 오면 새 리소스를 생성한다. 이를 멱등이라고 주장하지 않으며 UI는 중복 클릭을 막아야 한다. 후속 키 추가는 별도 API 변경이다.
+- purchase order POST에는 공개 idempotency key가 없다. 같은 POST가 다시 오면 새 리소스를 생성한다. 이를 멱등이라고 주장하지 않으며 UI는 중복 클릭을 막아야 한다. 후속 키 추가는 별도 API 변경이다.
 - send-records는 최신 전송 방식의 기록이다. 동일 channel/정규화 번호 재요청은 기존 sent_at을 보존하고, 다른 channel 기록은 최신으로 갱신한다. 모든 전송 이벤트 이력을 제공하는 API가 아니다.
 - 작업이 다시 실행돼도 업무 반영은 한 번이다. 각 handler는 업무 상태(import/scan 상태)를 먼저 확인하고 이미 반영됐으면 아무것도 하지 않는다.
 
 ## 읽기 응답과 오류 우선순위
 
-리소스 소속을 먼저 확인한 뒤 상태/값을 검증한다. 타 가게 리소스의 내부 상태를 422로 노출하지 않는다. GET는 DB에 쓰지 않고 외부 API를 호출하지 않는다. 발주 계획·재고·할인 추천은 GET 시점에 저장된 데이터로 계산해 돌려준다. 데이터가 없으면 스키마가 허용하는 빈 목록/누락/null을 반환한다.
+리소스 소속을 먼저 확인한 뒤 상태/값을 검증한다. 타 가게 리소스의 내부 상태를 422로 노출하지 않는다. GET는 DB에 쓰지 않고 외부 API를 호출하지 않는다. 발주 계획·재고·재고 부족 안내는 GET 시점에 저장된 데이터로 계산해 돌려준다. 데이터가 없으면 스키마가 허용하는 빈 목록/누락/null을 반환한다.

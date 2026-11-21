@@ -1,26 +1,54 @@
-"""A02 영수증과 발주, A03 당일 아침과 할인, A05 화면 간 일치."""
+"""A02 영수증과 발주, A03 당일 아침과 재고 부족 안내."""
 
+from datetime import date
+
+from app.infrastructure.jobs import queue
 from tests import helpers
 from tests.acceptance.test_onboarding import onboard
 from tests.conftest import kst
 from tests.fakes import receipt_image
 
-EGG = {"name": "계란 특란 30구", "unit": "판", "content": 30, "usageUnit": "개", "match": "계란", "kind": "exact"}
-FISHCAKE = {"name": "부산어묵 1kg", "unit": "봉", "unitPrice": 30000, "match": "어묵", "kind": "similar"}
-RICE_CAKE = {"name": "떡볶이떡 1kg", "unit": "kg", "unitPrice": 5000, "match": "떡", "kind": "exact"}
+EGG_UNIT_PRICE = 296.666667
 
-EGG_1108 = receipt_image(
-    "대한식자재",
-    "2026-11-08",
-    [{**EGG, "quantity": 6, "unitPrice": 8900}, {**FISHCAKE, "quantity": 3}],
-    phone="02-123-4567",
-)
-EGG_1027 = receipt_image(
-    "대한식자재", "2026-10-27", [{**EGG, "quantity": 1, "unitPrice": 7900}, {"name": "얼룩", "quantity": None}]
-)
-EGG_1103 = receipt_image("대한식자재", "2026-11-03", [{**EGG, "quantity": 1, "unitPrice": 7900}])
-FISHCAKE_1109 = receipt_image("대한 식자재", "2026-11-09", [{**FISHCAKE, "quantity": 10}])
-RICE_CAKE_1109 = receipt_image("망원떡집", "2026-11-09", [{**RICE_CAKE, "quantity": 2}])
+
+def egg(packs: int, pack_price: int) -> dict:
+    return {
+        "name": "계란 특란 30구",
+        "amount": packs * 30,
+        "unit": "개",
+        "linePrice": packs * pack_price,
+        "match": "계란",
+        "kind": "exact",
+    }
+
+
+def fishcake(packs: int) -> dict:
+    return {
+        "name": "부산어묵 1kg",
+        "amount": packs * 1000,
+        "unit": "g",
+        "linePrice": packs * 30000,
+        "match": "어묵",
+        "kind": "similar",
+    }
+
+
+def rice_cake(grams: int) -> dict:
+    return {
+        "name": "떡볶이떡 1kg",
+        "amount": grams,
+        "unit": "g",
+        "linePrice": grams * 5,
+        "match": "떡",
+        "kind": "exact",
+    }
+
+
+EGG_1108 = receipt_image("대한식자재", "2026-11-08", [egg(2, 8900), fishcake(3)], phone="02-123-4567")
+EGG_1027 = receipt_image("대한식자재", "2026-10-27", [egg(1, 7900), {"name": "얼룩", "amount": None}])
+EGG_1103 = receipt_image("대한식자재", "2026-11-03", [egg(1, 7900)])
+FISHCAKE_1109 = receipt_image("대한 식자재", "2026-11-09", [fishcake(10)])
+RICE_CAKE_1109 = receipt_image("망원떡집", "2026-11-09", [rice_cake(6000)])
 UNREADABLE = receipt_image(None, None, [], readable=False)
 ALL_IMAGES = [EGG_1108, EGG_1108, UNREADABLE, EGG_1027, EGG_1103, RICE_CAKE_1109, FISHCAKE_1109]
 
@@ -74,9 +102,9 @@ async def test_a02_receipts_then_order(api, deps, runner):
     assert daehan[2]["lines"] == [
         {
             "ingredient": {"id": ids["ingredients"]["계란"], "name": "계란", "isNew": False},
-            "quantity": {"value": 6, "unit": "판"},
+            "quantity": {"value": 60, "unit": "개"},
         },
-        {"ingredient": {"id": None, "name": "부산어묵 1kg", "isNew": True}, "quantity": {"value": 3, "unit": "봉"}},
+        {"ingredient": {"id": None, "name": "부산어묵 1kg", "isNew": True}, "quantity": {"value": 3000, "unit": "g"}},
     ]
     assert review["removedDuplicateTexts"] == [
         "11/8 대한식자재 영수증이 두 번 찍혀서 1장은 뺐어요",
@@ -88,7 +116,7 @@ async def test_a02_receipts_then_order(api, deps, runner):
     assert question["candidate"] == {"id": ids["ingredients"]["어묵"], "name": "어묵"}
     again = (await api.call("getReceiptScan", 200, storeId=store_id, scanId=scan_id)).json()
     assert again["questions"] == review["questions"]
-    assert "unitPrice" not in str(review) and "02-123" not in str(review)
+    assert "linePrice" not in str(review) and "02-123" not in str(review)
 
     await api.call("confirmReceiptScan", 422, storeId=store_id, scanId=scan_id)
     wrong = {"answers": [{"questionId": "q_other", "answer": "SAME"}]}
@@ -133,25 +161,25 @@ async def test_a02_receipts_then_order(api, deps, runner):
 
     plan = (await api.call("getOrderPlan", 200, storeId=store_id, targetDate="2026-11-11")).json()
     assert plan_lines(plan) == {
-        "계란": ({"value": 1, "unit": "판"}, 8900, {"value": 1, "unit": "판"}, 0),
-        "떡": ({"value": 4, "unit": "kg"}, 5000, {"value": 0, "unit": "kg"}, 0),
+        "계란": ({"value": 50, "unit": "개"}, EGG_UNIT_PRICE, {"value": 0, "unit": "개"}, 0),
+        "떡": ({"value": 2000, "unit": "g"}, 5, {"value": 2000, "unit": "g"}, 0),
     }
-    assert (plan["usualTotal"], plan["events"]) == (28900, [])
+    assert (plan["usualTotal"], plan["events"]) == (24833, [])
     home = (await api.call("getHome", 200, storeId=store_id)).json()
-    assert home["order"] == {"supplierCount": 2, "estimatedTotal": 28900}
+    assert home["order"] == {"supplierCount": 2, "estimatedTotal": 24833}
 
     gimbap = ids["menus"]["김밥"]
     adjusted = await api.call(
         "adjustForecast", 200, storeId=store_id, date="2026-11-11", menuId=gimbap, json={"quantity": 80}
     )
     assert adjusted.json()["item"]["planned"] == 80 and adjusted.json()["item"]["recommended"] == 50
-    assert adjusted.json()["order"] == {"supplierCount": 2, "estimatedTotal": 37800}
+    assert adjusted.json()["order"] == {"supplierCount": 2, "estimatedTotal": 33733}
     home = (await api.call("getHome", 200, storeId=store_id)).json()
     assert home["order"] == adjusted.json()["order"]
     assert home["forecast"]["items"][0]["planned"] == 80
     plan = (await api.call("getOrderPlan", 200, storeId=store_id, targetDate="2026-11-11")).json()
-    assert plan_lines(plan)["계란"][0] == {"value": 2, "unit": "판"}
-    assert plan["usualTotal"] == 28900
+    assert plan_lines(plan)["계란"][0] == {"value": 80, "unit": "개"}
+    assert plan["usualTotal"] == 24833
 
     stock_before = plan_lines(plan)
     order_body = {
@@ -159,20 +187,20 @@ async def test_a02_receipts_then_order(api, deps, runner):
         "suppliers": [
             {
                 "supplierId": by_name["대한식자재"]["id"],
-                "lines": [{"ingredientId": ids["ingredients"]["계란"], "quantity": 2}],
+                "lines": [{"ingredientId": ids["ingredients"]["계란"], "quantity": 60}],
             },
             {
                 "supplierId": by_name["망원떡집"]["id"],
-                "lines": [{"ingredientId": ids["ingredients"]["떡"], "quantity": 4.5}],
+                "lines": [{"ingredientId": ids["ingredients"]["떡"], "quantity": 4500.5}],
             },
         ],
     }
     created = (await api.call("createPurchaseOrders", 201, storeId=store_id, json=order_body)).json()["items"]
     orders = {order["supplier"]["name"]: order for order in created}
     assert orders["대한식자재"]["messageText"] == (
-        "[행복분식] 11/11(수) 발주\n계란 특란 30구 × 2판\n내일 오전 10시 전 도착 부탁드립니다."
+        "[행복분식] 11/11(수) 발주\n계란 특란 30구 × 60개\n내일 오전 10시 전 도착 부탁드립니다."
     )
-    assert orders["망원떡집"]["messageText"].splitlines()[1] == "떡볶이떡 1kg × 4.5kg"
+    assert orders["망원떡집"]["messageText"].splitlines()[1] == "떡볶이떡 1kg × 4500.5g"
     assert orders["대한식자재"]["supplier"]["phone"] == "02-123-4567"
     assert orders["대한식자재"]["supplier"]["phoneConfirmed"] is False
     assert orders["대한식자재"]["supplier"]["phoneSourceText"] == "11/8 영수증에서 읽었어요. 다음부터는 묻지 않아요"
@@ -213,14 +241,14 @@ async def test_a02_receipts_then_order(api, deps, runner):
         "recordSent", 422, storeId=store_id, purchaseOrderId=order_id, json={"channel": "SMS", "recipientPhone": "  "}
     )
 
-    await helpers.execute(deps, "UPDATE receipt_line SET unit_price = 9900 WHERE unit_price = 8900")
+    await helpers.execute(deps, "UPDATE receipt_line SET unit_price = unit_price * 2")
     history = (await api.call("listPurchaseOrders", 200, storeId=store_id)).json()["items"]
     assert {item["supplier"]["name"]: item["totalAmount"] for item in history} == {
         "대한식자재": 17800,
-        "망원떡집": 22500,
+        "망원떡집": 22503,
     }
     assert await helpers.count(deps, "receipt_line") == 6
-    await helpers.execute(deps, "UPDATE receipt_line SET unit_price = 8900 WHERE unit_price = 9900")
+    await helpers.execute(deps, "UPDATE receipt_line SET unit_price = unit_price / 2")
     after = (await api.call("getOrderPlan", 200, storeId=store_id, targetDate="2026-11-11")).json()
     assert plan_lines(after) == stock_before
 
@@ -231,7 +259,7 @@ async def test_a02_same_photo_in_two_scans_is_applied_once(api, deps, runner):
     other_item = receipt_image(
         "대한식자재",
         "2026-11-08",
-        [{"name": "단무지 3kg", "quantity": 1, "unit": "봉", "match": "단무지", "kind": "exact"}],
+        [{"name": "단무지 3kg", "amount": 3000, "unit": "g", "match": "단무지", "kind": "exact"}],
     )
     scan_a = await helpers.scan_receipts(api, runner, store_id, [other_item])
     scan_b = await helpers.scan_receipts(api, runner, store_id, [other_item, EGG_1108])
@@ -273,9 +301,10 @@ async def test_receipt_answers_units_and_empty_scan(api, deps, runner):
         "새벽상회",
         "2026-11-09",
         [
-            {**FISHCAKE, "quantity": 2},
-            {"name": "계란 대란", "quantity": 1, "unit": "박스", "match": "계란", "kind": "exact"},
-            {"name": "참기름 1.8L", "quantity": 1, "unit": "병", "unitPrice": 25000},
+            fishcake(2),
+            {"name": "계란 10kg", "amount": 10000, "unit": "g", "match": "계란", "kind": "exact"},
+            {"name": "참기름 1.8L", "amount": 1800, "unit": "g", "linePrice": 25000},
+            {"name": "양파 1망", "amount": 1, "unit": "망"},
         ],
     )
     scan_id = await helpers.scan_receipts(api, runner, store_id, [different])
@@ -285,28 +314,17 @@ async def test_receipt_answers_units_and_empty_scan(api, deps, runner):
     confirmed = (await api.call("getReceiptScan", 200, storeId=store_id, scanId=scan_id)).json()
     names = [line["ingredient"] for line in confirmed["groups"][0]["receipts"][0]["lines"]]
     assert [(item["name"], item["isNew"]) for item in names] == [("부산어묵 1kg", True), ("참기름 1.8L", True)]
-    assert confirmed["removedDuplicateTexts"] == ["11/9 새벽상회 영수증에서 1줄은 읽지 못해서 뺐어요"]
-    created = await helpers.fetch_all(
-        deps, "SELECT name, status, purchase_unit FROM ingredient WHERE name LIKE '참기름%'"
-    )
-    assert [tuple(row) for row in created] == [("참기름 1.8L", "LATER", "병")]
-    egg = await helpers.fetch_all(deps, "SELECT purchase_unit, content_quantity FROM ingredient WHERE name = '계란'")
-    assert tuple(egg[0]) == ("판", 30)
+    assert confirmed["removedDuplicateTexts"] == ["11/9 새벽상회 영수증에서 1줄은 읽지 못해서 뺐어요"] * 2
+    created = await helpers.fetch_all(deps, "SELECT name, unit FROM ingredient WHERE name LIKE '참기름%'")
+    assert [tuple(row) for row in created] == [("참기름 1.8L", "g")]
 
     listing = (await api.call("listIngredients", 200, storeId=store_id)).json()
     by_name = {item["name"]: item for item in listing["items"]}
-    assert listing["counts"] == {"core": 3, "later": 4}
-    assert by_name["참기름 1.8L"]["price"] == {"unitPrice": 25000}
-    assert by_name["참기름 1.8L"]["purchaseUnit"] == {"label": "병", "contentQuantity": None}
-    assert "usageUnit" not in by_name["참기름 1.8L"]
-    assert by_name["부산어묵 1kg"]["price"] == {"unitPrice": 30000}
+    assert len(listing["items"]) == 7
+    assert by_name["참기름 1.8L"]["price"] == {"unitPrice": 13.888889}
+    assert (by_name["참기름 1.8L"]["unit"], by_name["김"]["unit"]) == ("g", "개")
+    assert by_name["부산어묵 1kg"]["price"] == {"unitPrice": 30}
     assert by_name["계란"]["price"] is None and by_name["계란"]["supplier"] is None
-    assert by_name["계란"]["purchaseUnit"] == {"label": "판", "contentQuantity": 30}
-    assert by_name["단무지"]["purchaseUnit"] is None
-    assert [item["status"] for item in listing["items"]][:3] == ["CORE"] * 3
-    only_later = (await api.call("listIngredients", 200, storeId=store_id, params={"status": "LATER"})).json()
-    assert only_later["counts"] == listing["counts"] and len(only_later["items"]) == 4
-    await api.call("listIngredients", 422, storeId=store_id, params={"status": "ALL"})
 
     empty_scan = await helpers.scan_receipts(api, runner, store_id, [UNREADABLE])
     empty = (await api.call("getReceiptScan", 200, storeId=store_id, scanId=empty_scan)).json()
@@ -317,32 +335,65 @@ async def test_receipt_answers_units_and_empty_scan(api, deps, runner):
     assert await helpers.count(deps, "receipt_line") == lines_before
 
 
-async def test_a03_morning_and_discount(api, deps, runner):
+async def test_a03_morning_and_low_stock(api, deps, runner):
     ids = await with_receipts(api, deps, runner)
-    store_id = ids["storeId"]
-    order_body = {
-        "targetDate": "2026-11-11",
-        "suppliers": [
-            {
-                "supplierId": ids["suppliers"]["대한식자재"],
-                "lines": [{"ingredientId": ids["ingredients"]["계란"], "quantity": 1}],
-            }
-        ],
-    }
-    [order] = (await api.call("createPurchaseOrders", 201, storeId=store_id, json=order_body)).json()["items"]
-    evening = (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()
-    assert evening == {"date": "2026-11-10", "baseTime": "17:00", "recommendations": []}
+    store_id, ingredients, suppliers = ids["storeId"], ids["ingredients"], ids["suppliers"]
+    order_message = "발주해 주세요 · 이미 발주했다면 영수증을 올려주세요"
+
+    def low_stock(home):
+        return [banner for banner in home["banners"] if banner["type"] == "LOW_STOCK"]
+
+    counts_before = await helpers.row_counts(deps)
+    evening = (await api.call("getHome", 200, storeId=store_id)).json()
+    assert await helpers.row_counts(deps) == counts_before
+    assert [banner["type"] for banner in evening["banners"]] == ["FIRST_FORECAST", "LOW_STOCK"]
+    assert low_stock(evening) == [
+        {"type": "LOW_STOCK", "title": "계란·떡 재고가 얼마 안 남았어요", "message": order_message}
+    ]
+
+    def order_body(supplier_name, ingredient_name, quantity):
+        return {
+            "targetDate": "2026-11-11",
+            "suppliers": [
+                {
+                    "supplierId": suppliers[supplier_name],
+                    "lines": [{"ingredientId": ingredients[ingredient_name], "quantity": quantity}],
+                }
+            ],
+        }
+
+    [egg_order] = (
+        await api.call("createPurchaseOrders", 201, storeId=store_id, json=order_body("대한식자재", "계란", 50))
+    ).json()["items"]
+    [rice_order] = (
+        await api.call("createPurchaseOrders", 201, storeId=store_id, json=order_body("망원떡집", "떡", 6000))
+    ).json()["items"]
+
+    await api.call("putPushToken", 204, storeId=store_id, json={"token": helpers.PUSH_TOKEN})
+    await helpers.enqueue_context(deps, store_id, date(2026, 11, 11), "NIGHT")
+    async with deps.db.write() as uow:
+        await queue.enqueue_push(uow, store_id, date(2026, 11, 11), "NIGHT")
+    await runner.run_until_idle()
+    await helpers.release_postponed_jobs(deps)
+    await runner.run_until_idle()
+    assert deps.providers.push.sent[0][2] == "김밥 50인분 등 3개 메뉴 · 계란 외 1개 발주가 필요해요"
 
     deps.clock.fixed = kst("2026-11-11T07:40:00")
     home = (await api.call("getHome", 200, storeId=store_id)).json()
     assert (home["view"], home["targetDate"]) == ("TODAY", "2026-11-11")
     assert "order" not in home
-    assert [banner["type"] for banner in home["banners"]] == []
-    await api.call("recordSent", 204, storeId=store_id, purchaseOrderId=order["id"], json={"channel": "KAKAOTALK"})
+    assert [banner["type"] for banner in home["banners"]] == ["LOW_STOCK"]
+    await api.call("recordSent", 204, storeId=store_id, purchaseOrderId=egg_order["id"], json={"channel": "KAKAOTALK"})
     home = (await api.call("getHome", 200, storeId=store_id)).json()
-    assert home["banners"] == [
-        {"type": "DELIVERY_EXPECTED", "title": "어젯밤 발주한 재료가 오전에 들어와요", "message": "계란 1판"}
-    ]
+    assert home["banners"][0] == {
+        "type": "DELIVERY_EXPECTED",
+        "title": "어젯밤 발주한 재료가 오전에 들어와요",
+        "message": "계란 50개",
+    }
+    assert low_stock(home)[0]["message"] == order_message
+    await api.call("recordSent", 204, storeId=store_id, purchaseOrderId=rice_order["id"], json={"channel": "COPY"})
+    home = (await api.call("getHome", 200, storeId=store_id)).json()
+    assert low_stock(home)[0]["message"] == "이미 발주한 재료예요 · 받았다면 영수증을 올려주세요"
 
     gimbap = ids["menus"]["김밥"]
     sales_before = await helpers.count(deps, "daily_sales")
@@ -350,180 +401,20 @@ async def test_a03_morning_and_discount(api, deps, runner):
     await api.call("setProduction", 204, storeId=store_id, date="2026-11-11", menuId=gimbap, json={"quantity": 50})
     await api.call("setProduction", 422, storeId=store_id, date="2026-11-10", menuId=gimbap, json={"quantity": 1})
     await api.call("setProduction", 404, storeId=store_id, date="2026-11-20", menuId=gimbap, json={"quantity": 1})
-    home = (await api.call("getHome", 200, storeId=store_id)).json()
-    assert home["forecast"]["items"][0]["produced"] == 50
+    produced = (await api.call("getHome", 200, storeId=store_id)).json()
+    assert produced["forecast"]["items"][0]["produced"] == 50
     assert await helpers.count(deps, "daily_sales") == sales_before
-    assert "cautions" not in home
-    assert "notices" not in (await api.call("listIngredients", 200, storeId=store_id)).json()
+    assert low_stock(produced) == low_stock(home)
 
-    tang, tteok = ids["menus"]["어묵탕"], ids["menus"]["떡볶이"]
-    await api.call("setProduction", 204, storeId=store_id, date="2026-11-11", menuId=tang, json={"quantity": 14})
-    await api.call("setProduction", 204, storeId=store_id, date="2026-11-11", menuId=tteok, json={"quantity": 23})
-
-    deps.clock.fixed = kst("2026-11-11T16:59:00")
-    early = (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()
-    assert early == {"date": "2026-11-11", "baseTime": "17:00", "recommendations": []}
-
-    deps.clock.fixed = kst("2026-11-11T17:00:00")
-    counts_before = await helpers.row_counts(deps)
-    result = (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()
-    assert await helpers.row_counts(deps) == counts_before
-    assert result == {
-        "date": "2026-11-11",
-        "baseTime": "17:00",
-        "recommendations": [
-            {
-                "id": f"rec_2026-11-11_{tang}",
-                "menu": {"id": tang, "name": "어묵탕"},
-                "unit": "인분",
-                "discount": {"type": "PERCENT", "value": 30},
-                "startTime": "19:00",
-                "quantity": 4,
-                "reasonText": "예상보다 4인분 더 만들었어요",
-                "expectedSavings": 10800,
-            },
-            {
-                "id": f"rec_2026-11-11_{tteok}",
-                "menu": {"id": tteok, "name": "떡볶이"},
-                "unit": "인분",
-                "discount": {"type": "PERCENT", "value": 30},
-                "startTime": "19:00",
-                "quantity": 3,
-                "reasonText": "예상보다 3인분 더 만들었어요",
-                "expectedSavings": 3000,
-            },
-        ],
-    }
-    assert (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json() == result
-
-    card = result["recommendations"][0]
-    body = {
-        "recommendationId": card["id"],
-        "menuId": tang,
-        "discount": card["discount"],
-        "startTime": card["startTime"],
-        "quantity": card["quantity"],
-    }
-    preview = (await api.call("createDiscount", 200, storeId=store_id, params={"dryRun": "true"}, json=body)).json()
-    assert preview["id"].startswith("preview_")
-    assert preview["wasteCostAvoided"] - preview["revenueReduction"] == card["expectedSavings"]
-    assert (preview["originalPrice"], preview["discountedPrice"]) == (6000, 4200)
-    assert preview["promoText"] == "갓 만든 어묵탕, 마감 전에 할인해요"
-    assert [channel["app"] for channel in preview["channels"]] == ["BAEMIN", "COUPANG_EATS", "STORE_NOTICE"]
-    assert preview["channels"][0] == {"app": "BAEMIN", "launchUrl": None, "supportsPaste": False}
-    assert await helpers.count(deps, "discount") == 0
-    assert (await api.call("listDiscounts", 200, storeId=store_id)).json() == {"items": []}
-
-    created = (await api.call("createDiscount", 201, storeId=store_id, json=body)).json()
-    assert {key: value for key, value in created.items() if key != "id"} == {
-        key: value for key, value in preview.items() if key != "id"
-    }
-    history = (await api.call("listDiscounts", 200, storeId=store_id)).json()["items"]
-    assert history == [created]
-    assert (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json() == result
-
-    manual = {"menuId": tteok, "discount": {"type": "AMOUNT", "value": 500}, "startTime": "20:00", "quantity": 5}
-    manual_preview = (
-        await api.call("createDiscount", 200, storeId=store_id, params={"dryRun": True}, json=manual)
-    ).json()
-    assert (manual_preview["discountedPrice"], manual_preview["revenueReduction"]) == (4500, 2500)
-    assert manual_preview["wasteCostAvoided"] == 12500
-    await helpers.execute(deps, "UPDATE receipt_line SET unit_price = NULL WHERE product_name = '부산어묵 1kg'")
-    partly_known = (
-        await api.call("createDiscount", 200, storeId=store_id, params={"dryRun": True}, json=manual)
-    ).json()
-    assert partly_known["wasteCostAvoided"] == 5000
-    await helpers.execute(deps, "UPDATE receipt_line SET unit_price = NULL WHERE product_name = '떡볶이떡 1kg'")
-    unknown_cost = (
-        await api.call("createDiscount", 200, storeId=store_id, params={"dryRun": True}, json=manual)
-    ).json()
-    assert "wasteCostAvoided" not in unknown_cost and unknown_cost["revenueReduction"] == 2500
-    assert (await api.call("getDiscountRecommendations", 200, storeId=store_id)).json()["recommendations"] == []
-
-    for invalid in (
-        {**manual, "discount": {"type": "PERCENT", "value": 0}},
-        {**manual, "discount": {"type": "PERCENT", "value": 101}},
-        {**manual, "discount": {"type": "AMOUNT", "value": 10.5}},
-        {**manual, "discount": {"type": "AMOUNT", "value": 5001}},
-        {**manual, "quantity": 0},
-        {**manual, "startTime": "09:59"},
-        {**manual, "startTime": "21:00"},
-        {**manual, "startTime": "24:00"},
-        {**manual, "recommendationId": f"rec_2026-11-10_{tteok}"},
-    ):
-        await api.call("createDiscount", 422, storeId=store_id, json=invalid)
-    await api.call("createDiscount", 404, storeId=store_id, json={**manual, "menuId": "mn_missing"})
-    assert await helpers.count(deps, "discount") == 1
-
-    deps.clock.fixed = kst("2026-11-12T09:00:00")
-    await helpers.execute(deps, "UPDATE menu SET price = 9000 WHERE id = :id", id=tang)
-    assert (await api.call("listDiscounts", 200, storeId=store_id)).json() == {"items": []}
-    week = (await api.call("listDiscounts", 200, storeId=store_id, params={"range": "THIS_WEEK"})).json()["items"]
-    everything = (await api.call("listDiscounts", 200, storeId=store_id, params={"range": "ALL"})).json()["items"]
-    assert week == everything == [created]
-
-
-async def test_first_receipt_replaces_the_estimated_package_size(api, deps, runner):
-    ids = await onboard(api, deps, runner)
-    store_id = ids["storeId"]
-
-    async def units(name):
-        rows = await helpers.fetch_all(
-            deps, "SELECT usage_unit, purchase_unit, content_quantity FROM ingredient WHERE name = :name", name=name
-        )
-        return tuple(rows[0])
-
-    assert await units("떡") == ("g", "kg", 1000)
-    assert await units("어묵") == ("g", "봉", 1000)
-    assert await units("김") == ("장", "속", 100)
-    first = receipt_image(
-        "망원떡집",
-        "2026-11-07",
-        [
-            {
-                "name": "떡볶이떡 2kg",
-                "quantity": 3,
-                "unit": "봉",
-                "content": 2,
-                "usageUnit": "kg",
-                "match": "떡",
-                "kind": "exact",
-            },
-            {
-                "name": "부산어묵 40장",
-                "quantity": 1,
-                "unit": "봉",
-                "content": 40,
-                "usageUnit": "장",
-                "match": "어묵",
-                "kind": "exact",
-            },
-            {"name": "김밥김", "quantity": 2, "unit": "속", "match": "김", "kind": "exact"},
-        ],
-    )
-    scan_id = await helpers.scan_receipts(api, runner, store_id, [first])
+    delivered = receipt_image("대한식자재", "2026-11-11", [egg(4, 8900)])
+    scan_id = await helpers.scan_receipts(api, runner, store_id, [delivered])
     await api.call("confirmReceiptScan", 204, storeId=store_id, scanId=scan_id)
-    assert await units("떡") == ("g", "봉", 2000)
-    assert await units("어묵") == ("g", "봉", 1000)
-    assert await units("김") == ("장", "속", 100)
-    assert await helpers.count(deps, "receipt_line") == 3
+    home = (await api.call("getHome", 200, storeId=store_id)).json()
+    assert low_stock(home)[0]["title"] == "떡 재고가 얼마 안 남았어요"
+    assert low_stock(home)[0]["message"] == "이미 발주한 재료예요 · 받았다면 영수증을 올려주세요"
 
-    later = receipt_image(
-        "망원떡집",
-        "2026-11-09",
-        [
-            {
-                "name": "떡볶이떡 1kg",
-                "quantity": 1,
-                "unit": "봉",
-                "content": 1,
-                "usageUnit": "kg",
-                "match": "떡",
-                "kind": "exact",
-            }
-        ],
-    )
-    scan_id = await helpers.scan_receipts(api, runner, store_id, [later])
+    refilled = receipt_image("망원떡집", "2026-11-11", [rice_cake(6000)])
+    scan_id = await helpers.scan_receipts(api, runner, store_id, [refilled])
     await api.call("confirmReceiptScan", 204, storeId=store_id, scanId=scan_id)
-    assert await units("떡") == ("g", "봉", 2000)
-    assert await helpers.count(deps, "receipt_line") == 4
+    home = (await api.call("getHome", 200, storeId=store_id)).json()
+    assert low_stock(home) == []

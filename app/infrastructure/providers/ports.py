@@ -19,18 +19,15 @@ class ColumnDetection:
     date: str
     menu_name: str
     quantity: str
-    amount: str | None
     pos_system: str
 
 
 @dataclass(frozen=True)
 class ReceiptReadingLine:
     raw_product_name: str
-    quantity: Decimal | None
+    amount: Decimal | None
     unit: str | None
-    unit_price: int | None
-    content_quantity: Decimal | None
-    usage_unit: str | None
+    line_price: int | None
     match_name: str | None
     match_kind: str
 
@@ -47,7 +44,7 @@ class ReceiptReading:
 @dataclass(frozen=True)
 class RecipeDraftItem:
     ingredient_name: str
-    usage_unit: str
+    unit: str
     usage_per_menu: Decimal
 
 
@@ -58,16 +55,8 @@ class RecipeDraftMenu:
 
 
 @dataclass(frozen=True)
-class RecipeDraftIngredient:
-    name: str
-    purchase_unit: str | None
-    content_quantity: Decimal | None
-
-
-@dataclass(frozen=True)
 class RecipeDraft:
     menus: tuple[RecipeDraftMenu, ...]
-    ingredients: tuple[RecipeDraftIngredient, ...]
 
 
 @dataclass(frozen=True)
@@ -87,6 +76,13 @@ class HourlyWeather:
 class DayWeather:
     hours: tuple[HourlyWeather, ...]
     daily_max_c: Decimal | None
+
+
+@dataclass(frozen=True)
+class WeatherObservation:
+    observed_on: date
+    max_temperature_c: Decimal
+    precipitation_mm: Decimal
 
 
 @dataclass(frozen=True)
@@ -122,12 +118,12 @@ class ColumnDetector(Protocol):
 
 
 class ReceiptReader(Protocol):
-    async def read_receipt(self, jpeg: bytes, ingredient_names: list[str]) -> ReceiptReading: ...
+    async def read_receipt(self, jpeg: bytes, ingredient_units: dict[str, str]) -> ReceiptReading: ...
 
 
 class RecipeDrafter(Protocol):
     async def draft_recipes(
-        self, category: str, menus: list[tuple[str, str]], ingredient_names: list[str]
+        self, category: str, menu_names: list[str], ingredient_units: dict[str, str]
     ) -> RecipeDraft: ...
 
 
@@ -137,6 +133,10 @@ class Geocoder(Protocol):
 
 class WeatherProvider(Protocol):
     async def day_weather(self, point: GeoPoint, target_date: date, now: datetime) -> DayWeather: ...
+
+
+class ObservationProvider(Protocol):
+    async def daily_observations(self, start: date, end: date) -> list[WeatherObservation]: ...
 
 
 class EventProvider(Protocol):
@@ -162,6 +162,7 @@ class Providers:
     recipes: RecipeDrafter
     geocoder: Geocoder
     weather: WeatherProvider
+    observations: ObservationProvider
     events: EventProvider
     crowd: CrowdProvider
     push: PushSender

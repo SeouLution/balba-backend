@@ -34,11 +34,10 @@ sales / `ConfirmSalesImport.execute(StoreId, ImportId) → Accepted`. 요청 본
 
 ## 반영(APPLY_SALES)의 의미
 
-[엑셀 읽기](../infrastructure/integrations.md)의 반영 규칙을 따른다. 한 트랜잭션에서 메뉴 upsert → daily_sales 칸 교체 → 판매가 갱신 → COMPLETED → 후속 작업 등록(레시피 없는 메뉴가 있으면 GENERATE_RECIPES, 오늘·내일 GENERATE_FORECAST)을 한다.
+[엑셀 읽기](../infrastructure/integrations.md)의 반영 규칙을 따른다. 한 트랜잭션에서 메뉴 upsert → daily_sales 칸 교체 → COMPLETED → 후속 작업 등록(레시피 없는 메뉴가 있으면 GENERATE_RECIPES, 예측 모델을 다시 계산하는 FIT_FORECAST_MODEL)을 한다. 오늘·내일 예측은 FIT_FORECAST_MODEL이 끝날 때 등록된다([작업 명세](../infrastructure/jobs.md)).
 
 - 같은 메뉴·날짜는 더하지 않고 새 파일의 합계로 교체한다.
 - 첫 파일 기간 안에서 행이 없는 메뉴·날짜는 0개 판매로 읽힌다(D08). 겹치는 새 파일에서 누락된 기존 판매의 처리는 미정(U02)이다.
-- 판매가는 나중에 반영한 파일의 값이 남는다.
 - 이미 레시피가 있는 메뉴는 다시 만들지 않는다.
 
 ## 완료 조건

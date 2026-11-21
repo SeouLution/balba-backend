@@ -4,16 +4,16 @@
 
 | 단계 | 입력 문서 | 산출물 | 다음 단계로 가는 조건 |
 |---|---|---|---|
-| P0 계약 기반 | 범위, HTTP 규칙, `openapi.yaml` | DTO, 공통 오류, 25개 라우트(미구현은 500), 계약 테스트 틀 | 25 operation이 `openapi.yaml`과 1:1 대응 |
-| P1 인프라 | 아키텍처, 경계 타입, persistence, runtime | 설정, UoW, ORM/Alembic(ERD 16개 테이블), Clock(`DEMO_NOW`), FileStore, 정책 파일 로더 | 실제 PostgreSQL에서 migration·rollback 통과, 기존 health/spec/scalar 회귀 통과. `docs/spec/policy-defaults.toml`을 `app/policies/defaults.toml`로 옮김 |
+| P0 계약 기반 | 범위, HTTP 규칙, `openapi.yaml` | DTO, 공통 오류, 가게 API 20개 라우트(미구현은 500), 계약 테스트 틀 | 20 operation이 `openapi.yaml`과 1:1 대응 |
+| P1 인프라 | 아키텍처, 경계 타입, persistence, runtime | 설정, UoW, ORM/Alembic(ERD 전체 테이블), Clock(`DEMO_NOW`), FileStore, 정책 파일 로더 | 실제 PostgreSQL에서 migration·rollback 통과, 기존 health/spec/scalar 회귀 통과. `docs/spec/policy-defaults.toml`을 `app/policies/defaults.toml`로 옮김 |
 | P2 작업 루프 | jobs | `background_job` 큐, 작업 루프, 스케줄 등록, 외부 포트의 fake | 접수 후 재시작/재시도/DEAD/dedupe 및 시연 slot 1회 등록 검증 |
 | P3 가게·판매 | createStore, putPushToken, sales 3개, integrations(엑셀 읽기, 주소→좌표) | store, 엑셀 읽기, 판매 반영 | 같은 칸 다시 올리면 교체, COMPLETED와 후속 작업이 한 트랜잭션 |
-| P4 catalog·레시피 | candidates, core, recipes 2개, integrations(레시피 초안) | 재료·레시피 초안, 배지, 핵심 재료 선택, 레시피 저장 | LATER 레시피 보존, GENERATING 중 쓰기 422 |
+| P4 catalog·레시피 | recipes 2개, integrations(레시피 초안) | 재료·레시피 초안, 레시피 저장 | 메뉴별 레시피 전체 교체, GENERATING 중 쓰기 422 |
 | P5 영수증·거래처 | receipts 3개, suppliers 2개, integrations(영수증 읽기) | 영수증 읽기·확정, 입고·단가, 주문 요일 | 중복 입고 없음, 묶음 rollback, 확인된 전화·요일 보존 |
-| P6 예측·재고·발주 | calculations C01~C05, setProduction, getOrderPlan, integrations(날씨, 행사) | 예측·재고·발주 계산, `PlanOrder`, 날씨·행사 갱신 | F01·F02 fixture 통과 |
-| P7 할인 | C06·C07 할인 문구, discounts 3개, P6 PlanOrder | 추천 계산, preview/생성/이력 | F03 통과, GET 추천을 그대로 preview 가능 |
-| P8 화면 조합·발주서 | getHome, adjustForecast, listIngredients, purchaseOrders 2개, recordSent, C07, P7 추천 | `views` 유스케이스, 발주서 문구, 전송 기록 | 홈·준비량 조정·발주가 P6 계산을 공유 |
-| P9 실연동·운영 | integrations, runtime, validation | 실제 adapter 6종과 응답 fixture, 푸시, Dockerfile·배포 변경 목록 | 전체 인수 조건 통과, 실제 키로 각 공급자 1회 이상 호출 확인 |
+| P6 예측·재고·발주 | calculations C01~C05, setProduction, getOrderPlan, integrations(날씨, 과거 날씨, 행사), jobs(예측 모델 계산) | 예측 모델 계산(FIT_FORECAST_MODEL), 예측·재고·발주 계산, `PlanOrder`, 날씨·행사 갱신 | F01·F02 fixture 통과 |
+| P7 재고 부족 안내 | C06·C07 LOW_STOCK 문구, P6 재고·예측 | `FindLowStock`, 홈 배너, NIGHT 푸시 문구 | F03 통과 |
+| P8 화면 조합·발주서 | getHome, adjustForecast, listIngredients, purchaseOrders 2개, recordSent, C07, P7 부족 목록 | `views` 유스케이스, 발주서 문구, 전송 기록 | 홈·준비량 조정·발주가 P6 계산을 공유 |
+| P9 실연동·운영 | integrations, runtime, validation | 실제 adapter 7종과 응답 fixture, 푸시, Dockerfile·배포 변경 목록 | 전체 인수 조건 통과, 실제 키로 각 공급자 1회 이상 호출 확인 |
 
 P3~P8은 외부 포트를 fake로 두고 진행할 수 있다. 실제 adapter는 P9에서 붙이되, 키가 없어 호출해 보지 못한 공급자를 완료로 보고하지 않는다.
 
@@ -32,11 +32,11 @@ docs/spec/00-scope-and-decisions.md의 결정 원장과 원본 해시를 확인�
 
 docs/spec/01-architecture.md, 02-boundary-contracts.md, 03-http-contract.md,
 domain/calculations.md, infrastructure/ 문서를 선행 기준으로 써.
-implementation-plan.md의 P0~P9 순서로 구현하고 endpoints/의 25개 operation을 모두 완성해.
+implementation-plan.md의 P0~P9 순서로 구현하고 endpoints/의 20개 operation을 모두 완성해.
 애플리케이션 코드, Alembic migration, 테스트, 실행 설정까지 구현해.
 
 프로세스는 uvicorn 1개야. 비동기 작업은 background_job 테이블과 API 프로세스 안의 작업 루프로 처리해.
-발주 계획은 ordering.PlanOrder, 재고는 inventory.InventoryReader 한 곳에서만 계산해.
+발주 계획은 ordering.PlanOrder, 재고 부족 목록은 ordering.FindLowStock, 재고는 inventory.InventoryReader 한 곳에서만 계산해.
 서버가 만드는 문장은 calculations.md C07의 템플릿만 써.
 
 외부 연동은 integrations.md의 공급자를 실제로 붙여. 요청·응답 필드는 공식 문서를 확인하고,

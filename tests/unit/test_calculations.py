@@ -1,119 +1,176 @@
-"""validation.md의 계산 기준 fixture F01~F03과 문장 템플릿. DB·네트워크 없이 계산만 확인한다."""
+"""validation.md의 계산 기준 fixture F01~F02와 문장 템플릿. DB·네트워크 없이 계산만 확인한다."""
 
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 import pytest
 
-from app.infrastructure.providers.ports import DayWeather, HourlyWeather
-from app.modules import catalog, discounts, forecasting, inventory, ordering, receipts, sales, stores, suppliers
+from app.infrastructure.providers.ports import DayWeather, HourlyWeather, WeatherObservation
+from app.modules import catalog, forecasting, inventory, ordering, receipts, sales, stores, suppliers
 from app.shared import texts
 from app.shared.policy import load_policy
 from app.shared.types import KST, DayHours, to_qty
 
 POLICY = load_policy()
 WED = date(2026, 11, 11)
-OPEN_HOURS = tuple(
-    DayHours(day, False, time(10), time(21)) for day in ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
-)
+SAT = date(2026, 11, 14)
+DAY_CODES = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+OPEN_HOURS = tuple(DayHours(day, False, time(10), time(21)) for day in DAY_CODES)
+SUNDAY_CLOSED = tuple(DayHours(day, day == "SUN", time(10), time(21)) for day in DAY_CODES)
 
 
-def make_store(category="BUNSIK", hours=OPEN_HOURS) -> stores.StoreSnapshot:
+def make_store(hours=OPEN_HOURS, model=None) -> stores.StoreSnapshot:
     return stores.StoreSnapshot(
-        "st", "행복분식", category, "주소", hours, 37.55, 126.91, "READY", None, datetime.now(KST)
+        "st", "행복분식", "BUNSIK", "주소", hours, 37.55, 126.91, "READY", None, datetime.now(KST), model
     )
 
 
-def menu(menu_id="m1", name="김밥", unit="줄", price=4000) -> catalog.MenuSnapshot:
-    return catalog.MenuSnapshot(menu_id, "st", name, unit, price)
+def menu(menu_id="m1", name="김밥") -> catalog.MenuSnapshot:
+    return catalog.MenuSnapshot(menu_id, "st", name)
 
 
-def ingredient(ingredient_id="egg", name="계란", content=30, status="CORE", unit="개", purchase="판"):
-    return catalog.IngredientSnapshot(
-        ingredient_id, "st", name, status, unit, purchase, Decimal(content) if content else None, ()
+def daily_sales(start: date, days: int, quantity_on, menu_id="m1") -> sales.SalesSnapshot:
+    dates = [start + timedelta(days=offset) for offset in range(days)]
+    rows = tuple((menu_id, day, Decimal(quantity_on(day))) for day in dates)
+    return sales.SalesSnapshot(rows, ((dates[0], dates[-1]),))
+
+
+def model_json(weekday=1, weather=1, saturday=1.2, weather_index=None) -> dict:
+    model = forecasting.ForecastModel(
+        Decimal(str(weekday)),
+        Decimal(str(weather)),
+        {"SAT": Decimal(str(saturday))},
+        weather_index or {},
     )
+    return model.to_json()
 
 
-def weekly_sales(menu_id: str, target: date, quantities: list[int | None]) -> sales.SalesSnapshot:
-    """quantities[n]은 n+1주 전 같은 요일 판매량. None이면 그 주는 판매 기록이 없다."""
-    rows, ranges = [], []
-    for weeks, quantity in enumerate(quantities, start=1):
-        if quantity is not None:
-            day = target - timedelta(weeks=weeks)
-            rows.append((menu_id, day, Decimal(quantity)))
-            ranges.append((day, day))
-    return sales.SalesSnapshot(tuple(rows), tuple(ranges))
-
-
-def event(start_hour=12, end_hour=18, day=WED) -> forecasting.NearbyEvent:
+def event(start_hour=12, end_hour=18, day=SAT) -> forecasting.NearbyEvent:
     start = datetime.combine(day, time(start_hour), KST)
     return forecasting.NearbyEvent(
         "ev1", "축제", None, 650, start, start.replace(hour=end_hour), None, None, None, None, None, 37.55, 126.91
     )
 
 
-def weather(condition="RAIN") -> forecasting.WeatherSnapshot:
-    return forecasting.WeatherSnapshot("st", WED, Decimal(7), condition, "비", None)
+def weather(condition="RAIN", temperature=22) -> forecasting.WeatherSnapshot:
+    return forecasting.WeatherSnapshot("st", SAT, Decimal(temperature), condition, "비", None)
 
 
 # ───────── F01 예측 ─────────
 
+SATURDAY_SALES = daily_sales(SAT - timedelta(days=28), 28, lambda day: 60 if day.weekday() == 5 else 50)
 
-def test_f01_baseline_without_factors():
-    [item] = forecasting.build(
-        make_store(), WED, (menu(),), weekly_sales("m1", WED, [40, 60, 50, 50]), None, (), POLICY
-    )
-    assert (item.baseline, item.recommended, item.event_diff) == (50, 50, 0)
+
+def forecast(model=None, weather_snapshot=None, events=(), sold=SATURDAY_SALES, hours=SUNDAY_CLOSED, target=SAT):
+    return forecasting.build(make_store(hours, model), target, (menu(),), sold, weather_snapshot, events, POLICY)
+
+
+def test_f01_baseline_is_recent_level_times_weekday_tendency():
+    [item] = forecast(model_json())
+    assert (item.baseline, item.recommended, item.event_diff) == (60, 60, 0)
     assert forecasting.comparison(item, POLICY) == ("SIMILAR", 0)
-    assert item.summary_text == "지난 4주 수요일 평균 50줄"
+    assert item.summary_text == "평소 토요일 60인분"
+    [half_weight] = forecast(model_json(weekday=0.5))
+    assert half_weight.recommended == 56
+    [no_model] = forecast()
+    assert no_model.recommended == 52
 
 
 def test_f01_event_and_weather_factors():
-    sold = weekly_sales("m1", WED, [40, 60, 50, 50])
-    [with_event] = forecasting.build(make_store(), WED, (menu(),), sold, None, (event(),), POLICY)
-    assert (with_event.recommended, with_event.event_diff) == (60, 10)
-    assert forecasting.comparison(with_event, POLICY) == ("MORE", 10)
-    [with_both] = forecasting.build(make_store(), WED, (menu(),), sold, weather("RAIN"), (event(),), POLICY)
-    assert (with_both.recommended, with_both.event_diff) == (54, 9)
-    assert with_both.summary_text == "지난 4주 수요일 평균 50줄 · 행사 +20% · 비 -10%"
+    [with_event] = forecast(model_json(), events=(event(),))
+    assert (with_event.recommended, with_event.event_diff) == (72, 12)
+    assert forecasting.comparison(with_event, POLICY) == ("MORE", 12)
+    assert with_event.summary_text == "평소 토요일 60인분 · 행사 +20%"
+    rainy = {"m1": {"3:WET": Decimal("0.8")}}
+    [full] = forecast(model_json(weather_index=rainy), weather())
+    assert (full.recommended, full.summary_text) == (48, "평소 토요일 60인분 · 비 -20%")
+    [half] = forecast(model_json(weather=0.5, weather_index=rainy), weather())
+    assert half.recommended == 54
+    assert forecast(model_json(weather_index=rainy), weather(temperature=15))[0].recommended == 60
+    assert forecast(model_json(), weather())[0].recommended == 60
 
 
-def test_f01_fractional_baseline_rounds_half_up():
-    saturday = date(2026, 11, 14)
-    sold = weekly_sales("m1", saturday, [58, 58, 58, 59])
-    [item] = forecasting.build(make_store(), saturday, (menu(),), sold, None, (event(day=saturday),), POLICY)
-    assert item.baseline == Decimal("58.25")
-    assert item.recommended == 70
-    assert forecasting.comparison(item, POLICY) == ("MORE", 12)
-    assert item.summary_text == "지난 4주 토요일 평균 58줄 · 행사 +20%"
-
-
-def test_f01_weeks_without_record_leave_the_sample():
-    [three] = forecasting.build(
-        make_store(), WED, (menu(),), weekly_sales("m1", WED, [30, None, 60, 60]), None, (), POLICY
-    )
-    assert three.baseline == 50
-    assert forecasting.build(make_store(), WED, (menu(),), weekly_sales("m1", WED, [None] * 4), None, (), POLICY) == []
-
-
-def test_f01_day_inside_period_without_row_counts_as_zero():
-    covered = sales.SalesSnapshot((("m1", WED - timedelta(weeks=1), Decimal(40)),), ((WED - timedelta(weeks=2), WED),))
-    [item] = forecasting.build(make_store(), WED, (menu(),), covered, None, (), POLICY)
-    assert item.baseline == 20
-
-
-def test_closed_day_and_events_outside_business_hours():
-    closed = tuple(DayHours(hours.day, hours.day == "WED", hours.open, hours.close) for hours in OPEN_HOURS)
-    sold = weekly_sales("m1", WED, [50, 50, 50, 50])
-    assert forecasting.build(make_store(hours=closed), WED, (menu(),), sold, None, (event(),), POLICY) == []
-    [early] = forecasting.build(make_store(), WED, (menu(),), sold, None, (event(6, 9),), POLICY)
+def test_f01_no_recent_learning_day_or_closed_day_makes_no_forecast():
+    old = daily_sales(SAT - timedelta(days=60), 10, lambda day: 50)
+    assert forecast(model_json(), sold=old) == []
+    saturday_closed = tuple(replace(hours, closed=hours.day == "SAT") for hours in OPEN_HOURS)
+    assert forecast(model_json(), hours=saturday_closed) == []
+    [early] = forecast(model_json(), events=(event(6, 9),))
     assert early.event_diff == 0
+    covered = sales.SalesSnapshot((("m1", SAT - timedelta(days=1), Decimal(40)),), ((SAT - timedelta(days=2), SAT),))
+    [zero_filled] = forecast(sold=covered, hours=OPEN_HOURS)
+    assert zero_filled.baseline == 20
 
 
-def test_weather_factor_by_category_overrides_default():
-    assert POLICY.weather_factor_for("GUKBAP", "RAIN") == Decimal("1.05")
-    assert POLICY.weather_factor_for("BUNSIK", "RAIN") == Decimal("0.90")
-    assert POLICY.weather_factor_for("BUNSIK", None) == 1
+def test_f01_weekday_tendency_is_store_wide():
+    monday = date(2026, 11, 2)
+    sold = daily_sales(monday, 14, lambda day: 160 if day.weekday() == 5 else 100)
+    days = forecasting.learning_days(sold, SUNDAY_CLOSED)
+    weekday_index, _ = forecasting.tendencies(days, ["m1"], sold, {}, POLICY)
+    assert len(days) == 12
+    assert (weekday_index["SAT"], weekday_index["MON"], weekday_index["SUN"]) == (
+        Decimal("1.454545"),
+        Decimal("0.909091"),
+        1,
+    )
+    one_week, _ = forecasting.tendencies(days[:6], ["m1"], sold, {}, POLICY)
+    assert set(one_week.values()) == {Decimal(1)}
+
+
+def test_f01_weather_tendency_needs_enough_days_and_is_clamped():
+    flat_weekdays = replace(POLICY, min_weekday_days=99)
+    start = date(2026, 10, 1)
+    wet_days = {start + timedelta(days=offset) for offset in range(5)}
+    sold = daily_sales(start, 10, lambda day: 40 if day in wet_days else 60)
+    days = forecasting.learning_days(sold, OPEN_HOURS)
+    buckets = {day: "2:WET" if day in wet_days else "2:DRY" for day in days}
+    _, weather_index = forecasting.tendencies(days, ["m1"], sold, buckets, flat_weekdays)
+    assert weather_index["m1"] == {"2:WET": Decimal("0.8"), "2:DRY": Decimal("1.2")}
+    four_wet = {day: bucket for day, bucket in buckets.items() if day != start}
+    assert "2:WET" not in forecasting.tendencies(days, ["m1"], sold, four_wet, flat_weekdays)[1]["m1"]
+    collapsed = daily_sales(start, 10, lambda day: 10 if day in wet_days else 90)
+    assert forecasting.tendencies(days, ["m1"], collapsed, buckets, flat_weekdays)[1]["m1"] == {
+        "2:WET": Decimal("0.5"),
+        "2:DRY": Decimal("1.5"),
+    }
+    assert forecasting.weather_bucket(Decimal("20.0"), False, POLICY) == "3:DRY"
+    assert forecasting.weather_bucket(Decimal("-0.1"), True, POLICY) == "0:WET"
+
+
+def observed(day: date, rain_mm="0") -> WeatherObservation:
+    return WeatherObservation(day, Decimal(15), Decimal(rain_mm))
+
+
+def test_f01_weights_are_tuned_on_the_later_half():
+    start = date(2026, 8, 3)
+
+    def weekend_heavy(day):
+        return 90 if day.weekday() >= 5 else 50
+
+    short = daily_sales(start, 55, weekend_heavy)
+    untuned = forecasting.fit_model(OPEN_HOURS, ["m1"], short, [], POLICY, datetime.now(KST))
+    assert (untuned.weekday_weight, untuned.weather_weight, untuned.holdout_error) == (1, 1, None)
+
+    enough = daily_sales(start, 56, weekend_heavy)
+    tuned = forecasting.fit_model(OPEN_HOURS, ["m1"], enough, [], POLICY, datetime.now(KST))
+    assert (tuned.weekday_weight, tuned.weather_weight, tuned.holdout_error, tuned.tuned_days) == (1, 1, 0, 56)
+    assert tuned.weekday_index["SAT"] == Decimal("1.465116")
+
+    rain_days = {start + timedelta(days=offset) for offset in range(0, 112, 4)}
+    rain_sensitive = daily_sales(start, 112, lambda day: 30 if day in rain_days else 50)
+    observations = [observed(start + timedelta(days=offset)) for offset in range(112)]
+    observations = [
+        observed(item.observed_on, "9.9") if item.observed_on in rain_days else item for item in observations
+    ]
+    fitted = forecasting.fit_model(OPEN_HOURS, ["m1"], rain_sensitive, observations, POLICY, datetime.now(KST))
+    assert fitted.weather_weight == 1 and fitted.weather_index["m1"]["2:WET"] < 1
+    drizzle = [observed(item.observed_on, "0.9") for item in observations]
+    assert "2:WET" not in forecasting.fit_model(
+        OPEN_HOURS, ["m1"], rain_sensitive, drizzle, POLICY, datetime.now(KST)
+    ).weather_index.get("m1", {})
+    again = forecasting.fit_model(OPEN_HOURS, ["m1"], rain_sensitive, observations, POLICY, fitted.fitted_at)
+    assert again == fitted and forecasting.ForecastModel.from_json(fitted.to_json()).weather_weight == 1
 
 
 def test_haversine_uses_metre_rounding():
@@ -138,62 +195,39 @@ def test_weather_summary_picks_longest_precipitation_and_start_hour():
 
 # ───────── F02 재고·발주 ─────────
 
-EGG = ingredient()
+EGG = catalog.IngredientSnapshot("egg", "st", "계란", "개")
 GIMBAP = menu()
 EGG_RECIPE = catalog.CatalogSnapshot("st", (GIMBAP,), (EGG,), (catalog.RecipeLine("m1", "egg", Decimal(1)),))
+EGG_PRICE = Decimal("296.666667")
 
 
-def lot(line_id=1, day=date(2026, 11, 8), packs=2, price=8900, ingredient_id="egg", supplier_id="s1"):
-    return receipts.ReceiptLot(line_id, ingredient_id, supplier_id, day, Decimal(packs), price, "계란 특란 30구")
+def lot(line_id=1, day=date(2026, 11, 8), quantity=60):
+    return receipts.ReceiptLot(line_id, "egg", "s1", day, Decimal(quantity), EGG_PRICE, "계란 특란 30구")
 
 
-def recorded_sales() -> sales.SalesSnapshot:
-    rows = (("m1", date(2026, 11, 8), Decimal(20)), ("m1", date(2026, 11, 9), Decimal(25)))
-    return sales.SalesSnapshot(rows, ((date(2026, 11, 8), date(2026, 11, 9)),))
+def recorded_sales(*extra_rows) -> sales.SalesSnapshot:
+    rows = (("m1", date(2026, 11, 8), Decimal(20)), ("m1", date(2026, 11, 9), Decimal(25)), *extra_rows)
+    last_day = max(row[1] for row in rows)
+    return sales.SalesSnapshot(rows, ((date(2026, 11, 8), last_day),))
 
 
-def stock_on(as_of: date, usage=(), sold=None, lots=None):
-    return inventory.evaluate(EGG_RECIPE, sold or recorded_sales(), list(usage), lots or [lot()], OPEN_HOURS, as_of)[
-        "egg"
-    ]
+def stock_on(as_of: date, sold=None, lots=None):
+    return inventory.evaluate(EGG_RECIPE, sold or recorded_sales(), lots or [lot()], as_of)["egg"].stock
 
 
-def test_f02_stock_after_recorded_sales():
-    assert stock_on(date(2026, 11, 9)).stock == 15
-
-
-def test_f02_day_without_sales_uses_produced_then_planned():
+def test_f02_stock_is_receipts_minus_recorded_sales_only():
     tuesday = date(2026, 11, 10)
-    planned = forecasting.UsageRow("m1", tuesday, None, Decimal(10))
-    assert stock_on(tuesday, [planned]).stock == 5
-    produced = forecasting.UsageRow("m1", tuesday, Decimal(12), Decimal(10))
-    assert stock_on(tuesday, [produced]).stock == 3
-
-
-def test_f02_day_without_forecast_uses_weekday_average_or_unknown():
-    tuesday = date(2026, 11, 10)
-    assert stock_on(tuesday).stock is None
-    rows = (*recorded_sales().rows, ("m1", date(2026, 11, 3), Decimal(7)))
-    with_history = sales.SalesSnapshot(rows, (*recorded_sales().covered_ranges, (date(2026, 11, 3), date(2026, 11, 3))))
-    assert stock_on(tuesday, sold=with_history).stock == 8
+    assert stock_on(date(2026, 11, 9)) == 15
+    assert stock_on(tuesday) == 15
+    assert stock_on(tuesday, sold=recorded_sales(("m1", tuesday, Decimal(10)))) == 5
+    assert inventory.evaluate(EGG_RECIPE, recorded_sales(), [], tuesday)["egg"].stock is None
 
 
 def test_f02_usage_above_stock_floors_at_zero_and_old_stock_stays():
     heavy = sales.SalesSnapshot((("m1", date(2026, 11, 8), Decimal(100)),), ((date(2026, 11, 8), date(2026, 11, 9)),))
-    assert stock_on(date(2026, 11, 9), sold=heavy).stock == 0
-    refilled = [lot(), lot(line_id=2, day=date(2026, 11, 9), packs=1)]
-    assert stock_on(date(2026, 11, 9), sold=heavy, lots=refilled).stock == 30
-    quiet = sales.SalesSnapshot((), ((date(2026, 11, 8), date(2026, 12, 31)),))
-    assert stock_on(date(2026, 12, 31), sold=quiet).stock == 60
-
-
-def test_stock_is_unknown_without_conversion_or_receipt():
-    no_conversion = catalog.CatalogSnapshot("st", (GIMBAP,), (ingredient(content=None),), EGG_RECIPE.recipe_lines)
-    assert (
-        inventory.evaluate(no_conversion, recorded_sales(), [], [lot()], OPEN_HOURS, date(2026, 11, 9))["egg"].stock
-        is None
-    )
-    assert inventory.evaluate(EGG_RECIPE, recorded_sales(), [], [], OPEN_HOURS, date(2026, 11, 9))["egg"].stock is None
+    assert stock_on(date(2026, 11, 9), sold=heavy) == 0
+    refilled = [lot(), lot(line_id=2, day=date(2026, 11, 9), quantity=30)]
+    assert stock_on(date(2026, 11, 9), sold=heavy, lots=refilled) == 30
 
 
 def forecast_row(planned: int, baseline=60, event_diff=0, adjusted=None) -> forecasting.ForecastSnapshot:
@@ -206,172 +240,43 @@ def supplier(order_days=("TUE",), status="CONFIRMED") -> suppliers.SupplierSnaps
     return suppliers.SupplierSnapshot("s1", "st", "대한식자재", None, False, None, order_days, status)
 
 
-def plan(forecasts, stock, target_supplier=None, order_day="TUE", price=8900):
+def plan(forecasts, remaining, target_supplier=None, order_day="TUE", price=EGG_PRICE):
     fact = receipts.LatestPurchaseFact("egg", "s1", "계란 특란 30구", price, date(2026, 11, 8), 1)
-    target_supplier = target_supplier or supplier()
+    stock = inventory.InventorySnapshot("egg", date(2026, 11, 10), None if remaining is None else Decimal(remaining))
     return ordering.plan(
-        EGG_RECIPE, forecasts, {"egg": stock}, {"egg": fact}, {"s1": target_supplier}, (), order_day, WED
+        EGG_RECIPE, forecasts, {"egg": stock}, {"egg": fact}, {"s1": target_supplier or supplier()}, (), order_day, WED
     )
 
 
-def known_stock(remaining: int | None) -> inventory.InventorySnapshot:
-    stock = None if remaining is None else Decimal(remaining)
-    return inventory.InventorySnapshot("egg", date(2026, 11, 10), stock)
-
-
-def test_f02_order_packs_round_up_and_event_diff():
-    result = plan([forecast_row(75, baseline=60, event_diff=15)], known_stock(15))
+def test_f02_order_is_the_shortage_in_ingredient_units():
+    result = plan([forecast_row(75, baseline=60, event_diff=15)], 15)
     [line] = result.lines
-    assert (line.quantity, line.unit, line.stock, line.event_diff, line.price) == (2, "판", Decimal("0.5"), 0, 8900)
-    assert result.total == 17800
-    assert result.usual_total == 17800
-
-
-def test_f02_unknown_stock_orders_everything_and_keeps_null():
-    [line] = plan([forecast_row(75)], known_stock(None)).lines
-    assert (line.quantity, line.stock) == (3, None)
-    [zero] = plan([forecast_row(75)], known_stock(0)).lines
-    assert (zero.quantity, zero.stock) == (3, 0)
+    assert (line.quantity, line.unit, line.stock, line.event_diff, line.price) == (60, "개", 15, 15, EGG_PRICE)
+    assert (result.total, result.usual_total) == (17800, 13350)
+    [fraction] = plan([forecast_row(75)], Decimal("14.5")).lines
+    assert fraction.quantity == 61
+    assert plan([forecast_row(75)], 75).lines == ()
 
 
 def test_adjusted_menu_has_no_event_increment():
-    [line] = plan([forecast_row(60, event_diff=10, adjusted=Decimal(90))], known_stock(0)).lines
-    assert (line.quantity, line.event_diff) == (3, 0)
-    [increased] = plan([forecast_row(70, event_diff=40)], known_stock(0)).lines
-    assert (increased.quantity, increased.event_diff) == (3, 2)
+    [line] = plan([forecast_row(60, event_diff=10, adjusted=Decimal(90))], 0).lines
+    assert (line.quantity, line.event_diff) == (90, 0)
 
 
 def test_supplier_must_order_today_with_known_days():
-    assert plan([forecast_row(75)], known_stock(0), order_day="WED").lines == ()
-    assert plan([forecast_row(75)], known_stock(0), supplier(status="UNKNOWN")).lines == ()
-    assert plan([forecast_row(75)], known_stock(0), supplier(order_days=(), status="CONFIRMED")).lines == ()
-    assert len(plan([forecast_row(75)], known_stock(0), supplier(status="ESTIMATED")).lines) == 1
+    assert plan([forecast_row(75)], 0, order_day="WED").lines == ()
+    assert plan([forecast_row(75)], 0, supplier(status="UNKNOWN")).lines == ()
+    assert plan([forecast_row(75)], 0, supplier(order_days=(), status="CONFIRMED")).lines == ()
+    assert len(plan([forecast_row(75)], 0, supplier(status="ESTIMATED")).lines) == 1
 
 
 def test_money_total_adds_only_known_prices():
-    assert ordering.money_total([(Decimal(2), 8900), (Decimal(1), None), (Decimal(3), 1000)]) == 20800
+    assert (
+        ordering.money_total([(Decimal(60), EGG_PRICE), (Decimal(1), None), (Decimal(4538), Decimal("2.5"))]) == 29145
+    )
     assert ordering.money_total([(Decimal(2), None)]) is None
     assert ordering.money_total([]) is None
-    assert plan([forecast_row(75)], known_stock(15), price=None).total is None
-
-
-# ───────── F03 할인 ─────────
-
-TODAY = date(2026, 11, 11)
-TTEOK = menu("m_tteok", "떡볶이", "인분", 5000)
-TANG = menu("m_tang", "어묵탕", "인분", 6000)
-FISHCAKE = ingredient("fish", "어묵", content=1000, unit="g", purchase="봉")
-RICE_CAKE = ingredient("rice", "떡", content=1000, unit="g", purchase="kg")
-RADISH = ingredient("radish", "무", content=None, unit="g", purchase=None)
-
-
-def recipe_costs(fish_price=18000, rice_price=None) -> discounts.RecipeCosts:
-    """떡볶이 1인분 = 어묵 100g + 떡 200g + 무 50g. 어묵 1봉(1,000g) 18,000원이면 어묵 원가는 1,800원."""
-    lines = (
-        catalog.RecipeLine("m_tteok", "fish", Decimal(100)),
-        catalog.RecipeLine("m_tteok", "rice", Decimal(200)),
-        catalog.RecipeLine("m_tteok", "radish", Decimal(50)),
-        catalog.RecipeLine("m_tang", "fish", Decimal(200)),
-    )
-    facts = {
-        "fish": receipts.LatestPurchaseFact("fish", "s1", "부산어묵", fish_price, TODAY, 1),
-        "rice": receipts.LatestPurchaseFact("rice", "s1", "떡볶이떡", rice_price, TODAY, 2),
-        "radish": receipts.LatestPurchaseFact("radish", "s1", "무", 2000, TODAY, 3),
-    }
-    return discounts.RecipeCosts(
-        catalog.CatalogSnapshot("st", (TTEOK, TANG), (FISHCAKE, RICE_CAKE, RADISH), lines), facts
-    )
-
-
-def made_row(target_menu, recommended=50, adjusted=None, produced=None) -> forecasting.ForecastSnapshot:
-    return forecasting.ForecastSnapshot(
-        target_menu,
-        TODAY,
-        Decimal(recommended),
-        Decimal(recommended),
-        None if adjusted is None else Decimal(adjusted),
-        None if produced is None else Decimal(produced),
-        Decimal(0),
-        None,
-        None,
-    )
-
-
-def recommend(rows, costs=None):
-    return discounts.recommend(rows, costs or recipe_costs(), time(19), TODAY, POLICY)
-
-
-def test_f03_manual_discount_amounts():
-    payload = discounts.DiscountInput("m_tteok", "PERCENT", Decimal(10), time(19), Decimal(5))
-    result = discounts.evaluate(payload, TTEOK, recipe_costs(), TODAY)
-    assert (result.discounted_price, result.revenue_reduction) == (4500, 2500)
-    assert result.waste_cost_avoided == 9000
-    assert result.promo_text == "갓 만든 떡볶이, 마감 전에 할인해요"
-    amount = discounts.evaluate(
-        discounts.DiscountInput("m_tteok", "AMOUNT", Decimal(700), time(19), Decimal(3)), TTEOK, recipe_costs(), TODAY
-    )
-    assert (amount.discounted_price, amount.revenue_reduction) == (4300, 2100)
-
-
-def test_f03_unit_cost_adds_only_ingredients_with_known_price_and_conversion():
-    assert recipe_costs().menu_unit_cost("m_tteok") == 1800
-    assert recipe_costs(rice_price=5000).menu_unit_cost("m_tteok") == 2800
-    assert recipe_costs(fish_price=None).menu_unit_cost("m_tteok") is None
-
-
-def test_f03_unknown_cost_omits_waste_cost_and_drops_recommendation():
-    payload = discounts.DiscountInput("m_tteok", "PERCENT", Decimal(10), time(19), Decimal(5))
-    unknown = recipe_costs(fish_price=None)
-    assert discounts.evaluate(payload, TTEOK, unknown, TODAY).waste_cost_avoided is None
-    assert recommend([made_row(TTEOK, produced=55)], unknown) == []
-
-
-def test_f03_recommends_only_what_was_made_above_the_recommended_quantity():
-    assert recommend([made_row(TTEOK)]) == []
-    assert recommend([made_row(TTEOK, adjusted=58, produced=0)]) == []
-    [recorded] = recommend([made_row(TTEOK, produced=55)])
-    assert (recorded.id, recorded.evaluation.quantity) == ("rec_2026-11-11_m_tteok", 5)
-    assert recorded.reason_text == "예상보다 5인분 더 만들었어요"
-    assert (recorded.evaluation.waste_cost_avoided, recorded.evaluation.revenue_reduction) == (9000, 7500)
-    assert recorded.expected_savings == 1500
-    [adjusted] = recommend([made_row(TTEOK, adjusted=58)])
-    assert adjusted.evaluation.quantity == 8
-
-
-def test_f03_orders_by_savings_and_drops_non_positive_savings():
-    rows = [made_row(TTEOK, produced=55), made_row(TANG, produced=52)]
-    assert [item.evaluation.menu.id for item in recommend(rows)] == ["m_tang", "m_tteok"]
-    assert recommend(rows, recipe_costs(fish_price=8000)) == []
-    assert discounts.recommend(rows, recipe_costs(), None, TODAY, POLICY) == []
-    no_price = menu("m_free", "서비스 떡볶이", "인분", None)
-    assert recommend([made_row(no_price, produced=55)]) == []
-
-
-def test_f03_recommended_start_time():
-    def window(open_hour, close_hour, next_day=False):
-        start = datetime.combine(TODAY, time(open_hour), KST)
-        end = datetime.combine(TODAY + timedelta(days=1 if next_day else 0), time(close_hour), KST)
-        return start, end
-
-    assert discounts.recommended_start(window(10, 21), TODAY, POLICY) == time(19)
-    assert discounts.recommended_start(window(10, 16), TODAY, POLICY) is None
-    assert discounts.recommended_start(window(18, 2, next_day=True), TODAY, POLICY) == time(0)
-    assert discounts.recommended_start(window(10, 18), TODAY, POLICY) == time(17)
-
-
-def test_discount_value_ranges():
-    for discount_type, value in (
-        ("PERCENT", Decimal(0)),
-        ("PERCENT", Decimal("100.1")),
-        ("AMOUNT", Decimal("10.5")),
-        ("AMOUNT", Decimal(5001)),
-    ):
-        with pytest.raises(Exception):
-            discounts.validate_discount_value(discount_type, value, 5000)
-    discounts.validate_discount_value("PERCENT", Decimal(100), 5000)
-    discounts.validate_discount_value("AMOUNT", Decimal(5000), 5000)
-    assert discounts.discounted_price(4999, "PERCENT", Decimal(10)) == 4499
-    assert discounts.discounted_price(4995, "PERCENT", Decimal(10)) == 4496
+    assert plan([forecast_row(75)], 15, price=None).total is None
 
 
 # ───────── 문장·정책·수량 ─────────
@@ -380,24 +285,33 @@ def test_discount_value_ranges():
 def test_templates():
     assert texts.josa("김밥", "을", "를") == "김밥을"
     assert texts.josa("떡볶이", "을", "를") == "떡볶이를"
-    assert texts.overnight_change_title("김밥", Decimal(-2), "줄") == "밤사이 예보가 바뀌어 김밥을 2줄 줄였어요"
-    assert texts.overnight_change_title(None, Decimal(0), "") == "밤사이 날씨 예보가 바뀌었어요"
-    assert texts.discount_reason(Decimal(5), "인분") == "예상보다 5인분 더 만들었어요"
+    assert texts.overnight_change_title("김밥", Decimal(-2)) == "밤사이 예보가 바뀌어 김밥을 2인분 줄였어요"
+    assert texts.overnight_change_title(None, Decimal(0)) == "밤사이 날씨 예보가 바뀌었어요"
     assert texts.delivery_expected_banner(
-        [("계란", Decimal(3), "판"), ("김", Decimal(2), "속"), ("떡", Decimal(5), "kg"), ("무", Decimal(1), "개")]
+        [("계란", Decimal(90), "개"), ("김", Decimal(200), "개"), ("떡", Decimal(5000), "g"), ("무", Decimal(1), "개")]
     ) == (
         "어젯밤 발주한 재료가 오전에 들어와요",
-        "계란 3판 · 김 2속 · 떡 5kg 외 1개",
+        "계란 90개 · 김 200개 · 떡 5000g 외 1개",
     )
+    assert texts.low_stock_banner(["계란"], False) == (
+        "계란 재고가 얼마 안 남았어요",
+        "발주해 주세요 · 이미 발주했다면 영수증을 올려주세요",
+    )
+    assert texts.low_stock_banner(["계란", "김", "떡"], True) == (
+        "계란·김 외 1개 재고가 얼마 안 남았어요",
+        "이미 발주한 재료예요 · 받았다면 영수증을 올려주세요",
+    )
+    assert texts.low_stock_push_suffix(["계란", "김"]) == " · 계란 외 1개 발주가 필요해요"
+    assert texts.low_stock_push_suffix(["계란"]) == " · 계란 발주가 필요해요" and texts.low_stock_push_suffix([]) == ""
     assert texts.weather_change_text("비 · 14시부터", "비 · 13시부터") == "비 · 14시부터 → 비 · 13시부터"
     assert texts.weather_change_text("비", "비") is None and texts.weather_change_text(None, "비") is None
-    assert texts.push_message("NIGHT", "김밥", Decimal(60), "줄", 12) == (
+    assert texts.push_message("NIGHT", "김밥", Decimal(60), 12) == (
         "내일 준비량이 나왔어요",
-        "김밥 60줄 등 12개 메뉴",
+        "김밥 60인분 등 12개 메뉴",
     )
-    assert texts.push_message("MORNING", "김밥", Decimal(48), "줄", 12) == (
+    assert texts.push_message("MORNING", "김밥", Decimal(48), 12) == (
         "오늘 미리 만들어둘 양",
-        "김밥 48줄 등 12개 메뉴",
+        "김밥 48인분 등 12개 메뉴",
     )
     assert (
         texts.duplicate_receipt_notice(date(2026, 11, 8), "대한식자재")
@@ -408,12 +322,14 @@ def test_templates():
         WED,
         date(2026, 11, 10),
         10,
-        [("계란 특란 30구", Decimal(2), "판"), ("김밥김 100매", Decimal(1), "속")],
+        [("계란 특란 30구", Decimal(60), "개"), ("떡볶이떡 2kg", Decimal(4538), "g")],
     )
-    assert (
-        message
-        == "[행복분식] 11/11(수) 발주\n계란 특란 30구 × 2판\n김밥김 100매 × 1속\n내일 오전 10시 전 도착 부탁드립니다."
-    )
+    assert message.splitlines() == [
+        "[행복분식] 11/11(수) 발주",
+        "계란 특란 30구 × 60개",
+        "떡볶이떡 2kg × 4538g",
+        "내일 오전 10시 전 도착 부탁드립니다.",
+    ]
     assert texts.purchase_order_message("행복분식", WED, WED, 10, []).endswith("11/11 오전 10시 전 도착 부탁드립니다.")
     title, body = texts.event_today_banner(
         datetime.combine(WED, time(12), KST), datetime.combine(WED, time(18), KST), 13, 16, "김밥"
@@ -423,12 +339,6 @@ def test_templates():
 
 
 def test_policy_lookups():
-    assert POLICY.menu_unit_for("참치김밥") == "줄"
-    assert POLICY.menu_unit_for("아메리카노") == "개"
-    assert POLICY.tags_for("어묵", 1) == []
-    assert POLICY.tags_for("치즈", 1) == ["RECOMMENDED", "EXPENSIVE"]
-    assert POLICY.tags_for("단무지", 3) == ["RECOMMENDED"]
-    assert POLICY.tags_for("단무지", 2) == []
     used = [
         name
         for name in (
@@ -464,11 +374,10 @@ def test_sales_rows_skip_totals_and_net_refunds():
         ["합계", "", 4, 16000],
         [None, None, None, None],
     ]
-    mapping = {"date": "주문일자", "menuName": "상품명", "quantity": "수량", "amount": "결제금액"}
+    mapping = {"date": "주문일자", "menuName": "상품명", "quantity": "수량"}
     records = sales.parse_sales_rows(rows, mapping)
     assert [(record.sold_on, record.menu_name, record.quantity) for record in records] == [
         (date(2026, 11, 1), "김밥", 2),
         (date(2026, 11, 1), "김밥", -1),
         (date(2026, 11, 2), "김밥", 3),
     ]
-    assert sales.latest_prices(records) == {"김밥": 4000}

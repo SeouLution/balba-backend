@@ -5,7 +5,8 @@ from datetime import date
 
 from app.bootstrap import Container
 from app.infrastructure.jobs import queue, schedule
-from app.modules import catalog, forecasting, receipts, sales, stores
+from app.modules import catalog, forecasting, ordering, receipts, sales, stores
+from app.shared import texts
 
 logger = logging.getLogger("app.jobs")
 MAX_ATTEMPTS = 3
@@ -19,13 +20,19 @@ async def send_push(deps: Container, job: queue.Job) -> None:
     async with deps.db.read() as uow:
         forecast_job = await queue.find(uow, queue.forecast_key(store_id, target_date, slot))
         token = await stores.push_token(uow, store_id)
+        low_stock = []
+        if slot == "NIGHT" and token:
+            today = deps.clock.context(store_id).local_date
+            store = await stores.require(uow, store_id)
+            low_stock = await ordering.find_low_stock(uow, deps, store, today, target_date)
     waiting = forecast_job is None or forecast_job.state in ("READY", "RUNNING")
     if waiting and job.payload.get("waits", 0) < MAX_PUSH_WAITS:
         raise queue.PostponeJob
     push_text = None if waiting or forecast_job.state != "SUCCEEDED" else forecast_job.payload.get("pushText")
     delivered = True
     if push_text and token:
-        delivered = await deps.providers.push.send(token, push_text["title"], push_text["body"], "/")
+        suffix = texts.low_stock_push_suffix([item.ingredient.name for item in low_stock if not item.ordered])
+        delivered = await deps.providers.push.send(token, push_text["title"], push_text["body"] + suffix, "/")
     async with deps.db.write() as uow:
         if not delivered:
             await stores.clear_push_token_if_unchanged(uow, store_id, token)
@@ -38,6 +45,7 @@ HANDLERS = {
     "APPLY_SALES": sales.apply_import,
     "GENERATE_RECIPES": catalog.generate_recipes,
     "SCAN_RECEIPTS": receipts.scan_receipts,
+    "FIT_FORECAST_MODEL": forecasting.fit_forecast_model,
     "REFRESH_CONTEXT": forecasting.refresh_context,
     "GENERATE_FORECAST": forecasting.generate_forecast,
     "SEND_PUSH": send_push,

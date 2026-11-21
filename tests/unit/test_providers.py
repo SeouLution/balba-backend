@@ -10,7 +10,13 @@ import httpx
 import pytest
 
 from app.infrastructure.providers import real
-from app.infrastructure.providers.ports import CrowdPlace, GeoPoint, ProviderInvalidPayload, ProviderUnavailable
+from app.infrastructure.providers.ports import (
+    CrowdPlace,
+    GeoPoint,
+    ProviderInvalidPayload,
+    ProviderUnavailable,
+    WeatherObservation,
+)
 from app.shared.types import KST
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "providers"
@@ -107,6 +113,20 @@ def test_kma_codes_and_errors():
         real.parse_kma_items("not xml")
 
 
+def test_asos_daily_items_map_to_observations():
+    items = [
+        {"tm": "2026-11-08", "maxTa": "12.3", "sumRn": "4.5"},
+        {"tm": "2026-11-09", "maxTa": "-1.0", "sumRn": ""},
+        {"tm": "2026-11-10", "maxTa": "", "sumRn": "1.0"},
+    ]
+    assert real.to_weather_observations(items) == [
+        WeatherObservation(date(2026, 11, 8), Decimal("12.3"), Decimal("4.5")),
+        WeatherObservation(date(2026, 11, 9), Decimal("-1.0"), Decimal(0)),
+    ]
+    with pytest.raises(ProviderInvalidPayload):
+        real.to_weather_observations([{"maxTa": "1.0"}])
+
+
 def test_seoul_events_keep_only_events_open_on_the_target_date():
     rows, total = real.seoul_rows(fixture_json("seoul_cultural_events.json"), "culturalEventInfo")
     assert (len(rows), total) == (3, 19782)
@@ -189,11 +209,9 @@ async def test_claude_adapter_requests_structured_output_and_rejects_refusals():
         lines=[
             real.ReceiptLineOut(
                 rawProductName="계란 특란 30구",
-                quantity=2,
-                unit="판",
-                unitPrice=8900,
-                contentQuantity=30,
-                usageUnit="개",
+                amount=60,
+                unit="개",
+                linePrice=17800,
                 match=real.ReceiptMatchOut(ingredientName="계란", kind="exact"),
             )
         ],
@@ -205,9 +223,9 @@ async def test_claude_adapter_requests_structured_output_and_rejects_refusals():
         return reply
 
     adapter.client = SimpleNamespace(beta=SimpleNamespace(messages=SimpleNamespace(parse=fake_parse)))
-    reading = await adapter.read_receipt(b"\xff\xd8\xff", ["계란"])
+    reading = await adapter.read_receipt(b"\xff\xd8\xff", {"계란": "개"})
     assert (reading.supplier_name, reading.purchased_on) == ("대한식자재", date(2026, 11, 8))
-    assert reading.lines[0].quantity == Decimal("2.0") and reading.lines[0].match_kind == "exact"
+    assert reading.lines[0].amount == Decimal("60.0") and reading.lines[0].match_kind == "exact"
     assert sent["model"] == "claude-opus-5-5" and sent["output_format"] is real.ReceiptOut
     assert sent["fallbacks"] == "default" and sent["betas"] == ["server-side-fallback-2026-07-01"]
     assert "tool_choice" not in sent and "thinking" not in sent
@@ -217,7 +235,7 @@ async def test_claude_adapter_requests_structured_output_and_rejects_refusals():
     for stop_reason in ("refusal", "max_tokens"):
         reply.stop_reason = stop_reason
         with pytest.raises(ProviderInvalidPayload):
-            await adapter.read_receipt(b"\xff\xd8\xff", [])
+            await adapter.read_receipt(b"\xff\xd8\xff", {})
     assert real.to_receipt_reading(parsed.model_copy(update={"purchasedOn": "11월 8일"})).purchased_on is None
 
 

@@ -1,4 +1,4 @@
-"""A01 온보딩: 가게 생성 → 판매 올리기 → 레시피 초안 → 핵심 재료 → 첫 홈."""
+"""A01 온보딩: 가게 생성 → 판매 올리기 → 레시피 초안 → 첫 홈."""
 
 from datetime import date
 
@@ -7,38 +7,34 @@ from tests.conftest import kst
 
 SALES = {"김밥": (50, 4000), "떡볶이": (20, 5000), "어묵탕": (10, 6000)}
 RECIPES = {
-    "김밥": [("계란", "개", 1), ("김", "장", 1), ("단무지", "g", 20)],
+    "김밥": [("계란", "개", 1), ("김", "개", 1), ("단무지", "g", 20)],
     "떡볶이": [("떡", "g", 200), ("어묵", "g", 50)],
     "어묵탕": [("어묵", "g", 150)],
 }
-PURCHASE = {"계란": ("판", 30), "김": ("속", 100), "어묵": ("봉", 1000), "떡": ("kg", 1000)}
 
 
 async def onboard(api, deps, runner) -> dict:
     deps.providers.recipes.recipes = RECIPES
-    deps.providers.recipes.purchase = PURCHASE
     store_id = (await api.call("createStore", 201, json=helpers.store_body())).json()["id"]
     content = helpers.sales_csv(SALES, date(2026, 9, 29), date(2026, 11, 9))
     import_id = await helpers.upload_sales(api, runner, store_id, content)
-    candidates = (await api.call("listIngredientCandidates", 200, storeId=store_id)).json()
-    ingredient_ids = {item["name"]: item["id"] for item in candidates["items"]}
-    core = [ingredient_ids[name] for name in ("계란", "어묵", "떡")]
-    await api.call("setCoreIngredients", 204, storeId=store_id, json={"ingredientIds": core})
     recipes = (await api.call("listRecipes", 200, storeId=store_id)).json()
     menu_ids = {item["menu"]["name"]: item["menu"]["id"] for item in recipes["items"]}
+    ingredient_ids = {
+        line["ingredient"]["name"]: line["ingredient"]["id"] for item in recipes["items"] for line in item["items"]
+    }
     return {"storeId": store_id, "importId": import_id, "ingredients": ingredient_ids, "menus": menu_ids}
 
 
 async def test_onboarding_flow(api, deps, runner):
     deps.providers.recipes.recipes = RECIPES
-    deps.providers.recipes.purchase = PURCHASE
 
     created = await api.call("createStore", 201, json=helpers.store_body())
     store_id = created.json()["id"]
     assert set(created.json()) == {"id", "name", "category", "address", "businessHours"}
     await api.call("putPushToken", 204, storeId=store_id, json={"token": helpers.PUSH_TOKEN})
 
-    before = (await api.call("listIngredientCandidates", 200, storeId=store_id)).json()
+    before = (await api.call("listRecipes", 200, storeId=store_id)).json()
     assert before == {"generationStatus": "GENERATING", "items": []}
 
     content = helpers.sales_csv(SALES, date(2026, 9, 29), date(2026, 11, 9))
@@ -84,43 +80,30 @@ async def test_onboarding_flow(api, deps, runner):
     assert [key for key in states if key.startswith("apply:")] == [f"apply:{import_id}"]
     assert set(states.values()) == {"SUCCEEDED"}
 
-    candidates = (await api.call("listIngredientCandidates", 200, storeId=store_id)).json()
-    assert candidates["generationStatus"] == "READY"
-    by_name = {item["name"]: item for item in candidates["items"]}
-    assert candidates["items"][0]["name"] == "어묵"
-    assert by_name["어묵"]["usedInMenuCount"] == 2
-    assert [menu["name"] for menu in by_name["어묵"]["usedInMenus"]] == sorted(
-        ["떡볶이", "어묵탕"],
-        key=lambda name: next(menu["id"] for menu in by_name["어묵"]["usedInMenus"] if menu["name"] == name),
-    )
-    assert by_name["어묵"]["tags"] == []
-    assert by_name["계란"]["tags"] == []
-
-    core = [by_name[name]["id"] for name in ("계란", "어묵", "떡")]
-    await api.call("setCoreIngredients", 204, storeId=store_id, json={"ingredientIds": core})
-
-    recipes = (await api.call("listRecipes", 200, storeId=store_id)).json()["items"]
-    gimbap = next(item for item in recipes if item["menu"]["name"] == "김밥")
-    assert gimbap["unit"] == "줄"
-    assert [(line["ingredient"]["name"], line["quantity"]) for line in gimbap["items"]] == [
-        ("계란", {"value": 1, "unit": "개"})
+    listed = (await api.call("listRecipes", 200, storeId=store_id)).json()
+    assert listed["generationStatus"] == "READY"
+    gimbap = next(item for item in listed["items"] if item["menu"]["name"] == "김밥")
+    assert gimbap["unit"] == "인분"
+    assert sorted((line["ingredient"]["name"], line["quantity"]["value"]) for line in gimbap["items"]) == [
+        ("계란", 1),
+        ("김", 1),
+        ("단무지", 20),
     ]
+    egg = next(line for line in gimbap["items"] if line["ingredient"]["name"] == "계란")
+    assert egg["quantity"] == {"value": 1, "unit": "개"}
     await api.call(
         "saveRecipes",
         204,
         storeId=store_id,
         json={
             "items": [
-                {"menuId": gimbap["menu"]["id"], "items": [{"ingredientId": by_name["계란"]["id"], "quantity": 2}]}
+                {"menuId": gimbap["menu"]["id"], "items": [{"ingredientId": egg["ingredient"]["id"], "quantity": 2}]}
             ]
         },
     )
     saved = (await api.call("listRecipes", 200, storeId=store_id)).json()["items"]
-    assert next(item for item in saved if item["menu"]["name"] == "김밥")["items"][0]["quantity"]["value"] == 2
-    kept = await helpers.fetch_all(
-        deps, "SELECT count(*) AS n FROM recipe_item WHERE menu_id = :menu_id", menu_id=gimbap["menu"]["id"]
-    )
-    assert kept[0].n == 3
+    saved_gimbap = next(item for item in saved if item["menu"]["name"] == "김밥")
+    assert [line["quantity"]["value"] for line in saved_gimbap["items"]] == [2]
 
     await helpers.enqueue_context(deps, store_id, date(2026, 11, 11), "NIGHT")
     await runner.run_until_idle()
@@ -131,9 +114,9 @@ async def test_onboarding_flow(api, deps, runner):
     assert [item["menu"]["name"] for item in home["forecast"]["items"]] == ["김밥", "떡볶이", "어묵탕"]
     assert home["forecast"]["totalMenuCount"] == 3
     first = home["forecast"]["items"][0]
-    assert (first["recommended"], first["planned"], first["unit"]) == (50, 50, "줄")
+    assert (first["recommended"], first["planned"], first["unit"]) == (50, 50, "인분")
     assert first["comparison"] == {"direction": "SIMILAR", "diff": 0}
-    assert first["summaryText"] == "지난 4주 수요일 평균 50줄"
+    assert first["summaryText"] == "평소 수요일 50인분"
     assert first["previousRecommended"] is None and first["produced"] is None
     assert home["banners"] == [
         {"type": "FIRST_FORECAST", "title": "첫 예측이 준비됐어요", "message": "6주치 판매 기록으로 계산했어요"}

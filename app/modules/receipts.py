@@ -2,7 +2,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy import insert, select, update
 
@@ -13,7 +13,7 @@ from app.infrastructure.jobs import queue
 from app.infrastructure.providers.ports import ProviderInvalidPayload, ReceiptReading
 from app.modules import catalog, stores, suppliers
 from app.shared import texts
-from app.shared.types import InvalidRequest, NotFound, new_id, normalize_name
+from app.shared.types import INGREDIENT_UNITS, QTY_STEP, InvalidRequest, NotFound, new_id, normalize_name
 
 MAX_IMAGES = 30
 JPEG_SIGNATURE = b"\xff\xd8\xff"
@@ -25,8 +25,8 @@ class ReceiptLot:
     ingredient_id: str
     supplier_id: str
     purchased_on: date
-    purchase_quantity: Decimal
-    unit_price: int | None
+    quantity: Decimal
+    unit_price: Decimal | None
     product_name: str
 
 
@@ -35,7 +35,7 @@ class LatestPurchaseFact:
     ingredient_id: str
     supplier_id: str
     product_name: str
-    unit_price: int | None
+    unit_price: Decimal | None
     purchased_on: date
     receipt_line_id: int
 
@@ -126,9 +126,9 @@ def supplier_key(name: str) -> str:
 
 
 def fingerprint(supplier_name: str, purchased_on: date, lines: list[dict]) -> str:
-    """사진 한 장의 비교값. 거래처·날짜·(품명, 수량, 단가) 목록이 같으면 같은 영수증이다."""
+    """사진 한 장의 비교값. 거래처·날짜·(품명, 입고량, 줄 금액) 목록이 같으면 같은 영수증이다."""
     rows = sorted(
-        [line["rawProductName"], str(Decimal(line["quantity"]).normalize()), line["unitPrice"]] for line in lines
+        [line["rawProductName"], str(Decimal(line["amount"]).normalize()), line["linePrice"]] for line in lines
     )
     canonical = json.dumps(
         [supplier_key(supplier_name), purchased_on.isoformat(), rows], ensure_ascii=False, default=str
@@ -172,17 +172,13 @@ def build_scan_result(
         lines = []
         for line in reading.lines:
             raw_name = normalize_name(line.raw_product_name or "")
-            if not raw_name or line.quantity is None or line.quantity <= 0:
+            if not raw_name or line.amount is None or line.amount <= 0 or line.unit not in INGREDIENT_UNITS:
                 continue
             entry = {
                 "rawProductName": raw_name,
-                "quantity": str(line.quantity),
-                "unit": normalize_name(line.unit) if line.unit else None,
-                "unitPrice": line.unit_price if line.unit_price is not None and line.unit_price >= 0 else None,
-                "contentQuantity": str(line.content_quantity)
-                if line.content_quantity and line.content_quantity > 0
-                else None,
-                "usageUnit": normalize_name(line.usage_unit) if line.usage_unit else None,
+                "amount": str(line.amount),
+                "unit": line.unit,
+                "linePrice": line.line_price if line.line_price is not None and line.line_price >= 0 else None,
                 "ingredientId": None,
                 "questionId": None,
             }
@@ -261,13 +257,12 @@ def public_groups(result: dict, ingredient_by_id: dict[str, catalog.IngredientSn
         receipt = group["receipts"].setdefault(photo["purchasedOn"], {"purchasedOn": photo["purchasedOn"], "lines": []})
         for line in photo["lines"]:
             linked = ingredient_by_id.get(line["ingredientId"]) if line["ingredientId"] else None
-            unit = line["unit"] or (linked.purchase_unit if linked else None)
             receipt["lines"].append(
                 {
                     "ingredient": {"id": linked.id, "name": linked.name, "isNew": False}
                     if linked
                     else {"id": None, "name": line["rawProductName"], "isNew": True},
-                    "quantity": {"value": Decimal(line["quantity"]), "unit": unit} if unit else None,
+                    "quantity": {"value": Decimal(line["amount"]), "unit": line["unit"]},
                 }
             )
     return [
@@ -312,13 +307,13 @@ async def scan_receipts(deps: Container, job: queue.Job) -> None:
         ingredients = list((await catalog.snapshot(uow, store_id)).ingredients)
     readings: list[ReceiptReading | None] = []
     if row.status == "PROCESSING":
-        ingredient_names = [item.name for item in ingredients]
+        ingredient_units = {item.name: item.unit for item in ingredients}
         for key in row.images:
             if not deps.files.path(key).is_file():
                 raise queue.PermanentJobFailure("receipt image is missing")
             try:
                 readings.append(
-                    await deps.providers.receipts.read_receipt(deps.files.read_bytes(key), ingredient_names)
+                    await deps.providers.receipts.read_receipt(deps.files.read_bytes(key), ingredient_units)
                 )
             except ProviderInvalidPayload:
                 readings.append(None)
@@ -436,20 +431,22 @@ async def confirm_scan(deps: Container, store_id: str, scan_id: str, answers: li
             skipped = 0
             for line_idx, line in enumerate(photo["lines"]):
                 target = ingredient_by_line[(photo["number"], line_idx)]
-                if line["unit"] and target.purchase_unit and line["unit"] != target.purchase_unit:
+                if line["unit"] != target.unit:
                     skipped += 1
                     continue
+                amount = Decimal(line["amount"])
                 await uow.execute(
                     insert(receipt_line).values(
                         supplier_id=target_supplier.id,
                         purchased_on=purchased_on,
                         ingredient_id=target.id,
                         product_name=line["rawProductName"],
-                        quantity=Decimal(line["quantity"]),
-                        unit_price=line["unitPrice"],
+                        quantity=amount,
+                        unit_price=None
+                        if line["linePrice"] is None
+                        else (Decimal(line["linePrice"]) / amount).quantize(QTY_STEP, rounding=ROUND_HALF_UP),
                     )
                 )
-                unit = line["unit"] or target.purchase_unit
                 receipt["lines"].append(
                     {
                         "ingredient": {
@@ -458,7 +455,7 @@ async def confirm_scan(deps: Container, store_id: str, scan_id: str, answers: li
                             "isNew": line["ingredientId"] is None
                             and answer_by_question.get(line["questionId"]) != "SAME",
                         },
-                        "quantity": {"value": line["quantity"], "unit": unit} if unit else None,
+                        "quantity": {"value": line["amount"], "unit": line["unit"]},
                     }
                 )
             if skipped:
@@ -513,7 +510,6 @@ async def _resolve_ingredients(
     deps: Container,
 ) -> dict[tuple[int, int], catalog.IngredientSnapshot]:
     candidate_by_question = {question["id"]: question["candidateId"] for question in questions}
-    already_received = {lot.ingredient_id for lot in await lots(uow, store_id)}
     resolutions = []
     for photo in photos:
         for line_idx, line in enumerate(photo["lines"]):
@@ -525,15 +521,10 @@ async def _resolve_ingredients(
                     source_key=f"{photo['number']}:{line_idx}",
                     existing_ingredient_id=existing_id,
                     new_name=None if existing_id else line["rawProductName"],
-                    usage_unit=line["usageUnit"],
-                    purchase_unit=line["unit"],
-                    content_quantity=Decimal(line["contentQuantity"]) if line["contentQuantity"] else None,
-                    replaces_estimate=existing_id is not None and existing_id not in already_received,
+                    unit=line["unit"],
                 )
             )
-            if existing_id is not None:
-                already_received.add(existing_id)
-    resolved = await catalog.resolve_receipt_ingredients(uow, store_id, resolutions, deps.policy)
+    resolved = await catalog.resolve_receipt_ingredients(uow, store_id, resolutions)
     return {
         (photo["number"], line_idx): resolved[f"{photo['number']}:{line_idx}"]
         for photo in photos

@@ -31,14 +31,13 @@ app/
   api/                            # 예외 변환, dependency, router 등록
   modules/
     stores/                       # store, push token, 좌표
-    catalog/                      # menu, ingredient, recipe, 후보/CORE
+    catalog/                      # menu, ingredient, recipe
     sales/                        # sales_import, daily_sales
     receipts/                     # receipt_scan, receipt_line 확정
     suppliers/                    # supplier, 주문 요일, 전화번호
-    forecasting/                  # forecast, weather, event
-    inventory/                    # 입고·사용으로 재고를 계산(읽기 전용)
-    ordering/                     # 발주 계획, 발주서, 전송 기록
-    discounts/                    # 할인 추천/계산/이력
+    forecasting/                  # forecast, weather, event, 과거 날씨 관측, 예측 모델
+    inventory/                    # 입고·판매로 재고를 계산(읽기 전용)
+    ordering/                     # 발주 계획, 발주서, 전송 기록, 재고 부족 안내
     views/                        # 여러 모듈 결과를 조합하는 화면 단위 유스케이스
   infrastructure/
     db/                           # ORM, SQL, UoW, migrations
@@ -58,23 +57,22 @@ tests/{unit,contract,integration,acceptance}/
 | sales | sales_import, daily_sales | catalog(쓰기 포트로 메뉴 등록) |
 | suppliers | supplier | — |
 | receipts | receipt_scan, receipt_line | catalog·suppliers(쓰기 포트) |
-| forecasting | forecast, weather, event | sales, catalog, stores |
-| inventory | 없음 | receipts, sales, forecasting, catalog |
+| forecasting | forecast, weather, event, weather_observation, store.forecast_model | sales, catalog, stores |
+| inventory | 없음 | receipts, sales, catalog |
 | ordering | purchase_order, purchase_order_line | forecasting, inventory, receipts(단가), suppliers, catalog |
-| discounts | discount | forecasting(추천 준비량·만든 양), catalog, receipts(단가), stores |
 | views | 없음 | 위 전부 |
 
-의존은 한 방향이다: `views → discounts → ordering → inventory → forecasting → sales/catalog/stores`. 아래 모듈이 위 모듈을 부르지 않는다.
+의존은 한 방향이다: `views → ordering → inventory·forecasting → receipts/sales/catalog/stores`. 아래 모듈이 위 모듈을 부르지 않는다. inventory는 forecasting을 읽지 않는다(재고는 입고와 판매만으로 계산한다, D03). `store.forecast_model` 칸은 forecasting만 쓴다.
 
 여러 모듈의 결과를 한 응답으로 묶는 유스케이스는 `views`에 둔다. 다른 모듈에 두면 순환이 생긴다.
 
 | operation | 소유 | 이유 |
 |---|---|---|
-| getHome | views | 예측·날씨·행사·발주 요약을 조합 |
+| getHome | views | 예측·날씨·행사·발주 요약·재고 부족 안내를 조합 |
 | adjustForecast | views | 준비량 저장(forecasting) 뒤 발주 요약(ordering)을 다시 계산 |
 | listIngredients | views | 재료(catalog)·단가(receipts)·거래처(suppliers)를 조합 |
 
-**발주 계획은 `ordering.PlanOrder` 한 곳에서만 만든다.** getHome, adjustForecast, getOrderPlan은 이 유스케이스를 호출한다. 재고·단가·거래처·행사 입력을 각자 다시 모으지 않는다.
+**발주 계획은 `ordering.PlanOrder` 한 곳에서만 만든다.** getHome, adjustForecast, getOrderPlan은 이 유스케이스를 호출한다. 재고·단가·거래처·행사 입력을 각자 다시 모으지 않는다. **재고 부족 목록은 `ordering.FindLowStock` 한 곳에서만 만든다.** getHome과 NIGHT 푸시 발송이 이 유스케이스를 호출한다.
 
 ## 계층 규칙
 
@@ -93,17 +91,18 @@ tests/{unit,contract,integration,acceptance}/
 
 사용자 저장과 작업 결과가 서로 덮어쓰지 않게 하는 규칙은 두 가지뿐이다.
 
-1. 레시피 생성 중(`generation_status=GENERATING`)에는 setCoreIngredients와 saveRecipes를 422로 막는다.
-2. 예측 작업은 `recommended`, `baseline`, `event_diff`, `summary_text`, `previous_recommended`만 쓴다. `adjusted`와 `produced`는 사용자 요청만 쓴다.
+1. 레시피 생성 중(`generation_status=GENERATING`)에는 saveRecipes를 422로 막는다.
+2. 예측 작업은 `recommended`, `baseline`, `event_diff`, `summary_text`, `previous_recommended`만 쓴다. `adjusted`와 `produced`는 사용자 요청만 쓴다. `store.forecast_model`은 FIT_FORECAST_MODEL 작업만 쓴다.
 
 ## 데이터 변경 뒤의 후속 처리
 
-계산 결과 중 예측은 forecast에 저장하고, 밤사이 비교와 푸시에 필요한 시점별 결과는 해당 예측 작업에 남긴다. 발주 계획, 재고, 할인 추천은 조회할 때 계산하므로 무효화할 캐시가 없다.
+계산 결과 중 예측은 forecast에 저장하고, 밤사이 비교와 푸시에 필요한 시점별 결과는 해당 예측 작업에 남긴다. 예측 모델은 `store.forecast_model`에 저장한다. 발주 계획, 재고, 재고 부족 목록은 조회할 때 계산하므로 무효화할 캐시가 없다.
 
 | 변경 | 같은 트랜잭션에서 등록하는 작업 |
 |---|---|
-| 판매 반영 완료 | 새 메뉴가 있으면 GENERATE_RECIPES, 오늘·내일 GENERATE_FORECAST |
+| 판매 반영 완료 | 새 메뉴가 있으면 GENERATE_RECIPES, FIT_FORECAST_MODEL |
+| 예측 모델 계산 완료 | 오늘·내일 GENERATE_FORECAST |
 | 가게 생성 | GEOCODE_STORE |
 | 좌표 저장 완료 | 오늘·내일 REFRESH_CONTEXT |
 | 날씨·행사 갱신 완료 | 해당 날짜 GENERATE_FORECAST |
-| 준비량 PUT, 만든 양 PUT, CORE·레시피 저장, 영수증 확정, 주문 요일 저장, 발주, 할인 생성 | 없음 (다음 조회에서 바로 반영) |
+| 준비량 PUT, 만든 양 PUT, 레시피 저장, 영수증 확정, 주문 요일 저장, 발주 | 없음 (다음 조회에서 바로 반영) |

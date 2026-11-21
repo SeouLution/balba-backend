@@ -30,7 +30,7 @@ sales / `GetSalesImport.execute(StoreId, ImportId) → SalesImportView`. DB 상�
 1. store/import 소속을 한정해 읽는다. 다른 store의 ID도 404다.
 2. 현재 parse/apply job의 terminal DEAD가 있으면 500. 재시도 중이면 현재 public 상태를 반환한다.
 3. RECEIVED/PARSING에서는 id/status를 필수로 보내고 posFormat/detection/period/recordCount는 저장된 사실이 없으면 null.
-4. NEEDS_CONFIRMATION에서는 detection이 non-null이며 columnMapping 필수, preview≤5. 내부 amount 열·원본 경로·parser 오류를 제거한다. period와 recordCount는 parse 결과를 전달한다.
+4. NEEDS_CONFIRMATION에서는 detection이 non-null이며 columnMapping 필수, preview≤5. 원본 경로·parser 오류를 제거한다. period와 recordCount는 parse 결과를 전달한다.
 5. APPLYING/COMPLETED에서도 같은 detection/period/count를 유지한다. 판매 적용 완료와 레시피 READY는 별개이며 이 endpoint가 생성 상태를 추가하지 않는다.
 
 ## 완료 조건

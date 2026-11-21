@@ -54,8 +54,6 @@ class IngredientRow:
 @dataclass(frozen=True)
 class IngredientListView:
     items: tuple[IngredientRow, ...]
-    core_count: int
-    later_count: int
 
 
 def order_summary(plan: ordering.OrderPlanSnapshot) -> OrderSummary | None:
@@ -70,9 +68,11 @@ def resolve_view(ctx: StoreContext, deps: Container) -> tuple[str, date]:
 
 async def _banners(
     uow: UoW,
+    deps: Container,
     ctx: StoreContext,
     store: stores.StoreSnapshot,
     view: str,
+    target_date: date,
     forecasts: list[forecasting.ForecastSnapshot],
     ranked_menu_ids: list[str],
     forecast_context: forecasting.ForecastContext,
@@ -84,18 +84,32 @@ async def _banners(
         banners.append(
             Banner("FIRST_FORECAST", *texts.first_forecast_banner(math.ceil(sales_snapshot.covered_day_count() / 7)))
         )
-    if view != "TODAY":
-        return banners
+    if view == "TODAY":
+        banners += await _today_banners(uow, ctx, store, forecasts, ranked_menu_ids, forecast_context)
+    low_stock = await ordering.find_low_stock(uow, deps, store, ctx.local_date, target_date)
+    if low_stock:
+        names = [item.ingredient.name for item in low_stock]
+        banners.append(Banner("LOW_STOCK", *texts.low_stock_banner(names, all(item.ordered for item in low_stock))))
+    return banners
+
+
+async def _today_banners(
+    uow: UoW,
+    ctx: StoreContext,
+    store: stores.StoreSnapshot,
+    forecasts: list[forecasting.ForecastSnapshot],
+    ranked_menu_ids: list[str],
+    forecast_context: forecasting.ForecastContext,
+) -> list[Banner]:
+    banners = []
 
     changed = [item for item in forecasts if item.previous_recommended is not None]
     if changed:
         biggest = max(changed, key=lambda item: (abs(item.recommended - item.previous_recommended), item.menu.id))
         diff = biggest.recommended - biggest.previous_recommended
-        banners.append(
-            Banner("OVERNIGHT_CHANGE", texts.overnight_change_title(biggest.menu.name, diff, biggest.menu.unit), None)
-        )
+        banners.append(Banner("OVERNIGHT_CHANGE", texts.overnight_change_title(biggest.menu.name, diff), None))
     elif forecast_context.weather is not None and forecast_context.weather.change_text:
-        banners.append(Banner("OVERNIGHT_CHANGE", texts.overnight_change_title(None, Decimal(0), ""), None))
+        banners.append(Banner("OVERNIGHT_CHANGE", texts.overnight_change_title(None, Decimal(0)), None))
 
     today_events = forecasting.events_during(
         forecast_context.events, business_window(store.business_hours, ctx.local_date)
@@ -149,7 +163,11 @@ async def get_home(deps: Container, store_id: str) -> HomeView:
             target_date=target_date,
             weather=forecast_context.weather,
             events=forecast_context.events,
-            banners=tuple(await _banners(uow, ctx, store, view, forecasts, ranked, forecast_context, sales_snapshot)),
+            banners=tuple(
+                await _banners(
+                    uow, deps, ctx, store, view, target_date, forecasts, ranked, forecast_context, sales_snapshot
+                )
+            ),
             forecast_items=tuple(by_menu_id[menu_id] for menu_id in ranked[:3]),
             total_menu_count=len(menus),
             has_order_key=view == "TOMORROW",
@@ -172,24 +190,18 @@ async def adjust_forecast(
         return ForecastAdjustment(item, order)
 
 
-async def list_ingredients(deps: Container, store_id: str, status: str | None) -> IngredientListView:
+async def list_ingredients(deps: Container, store_id: str) -> IngredientListView:
     async with deps.db.read() as uow:
         await stores.require(uow, store_id)
         catalog_snapshot = await catalog.snapshot(uow, store_id)
         latest_purchase = await receipts.latest(uow, store_id)
         supplier_by_id = {item.id: item for item in await suppliers.list_all(uow, store_id)}
-        ordered = sorted(catalog_snapshot.ingredients_by_usage(), key=lambda item: item.status != "CORE")
         rows = [
             IngredientRow(
                 ingredient=item,
                 latest_purchase=latest_purchase.get(item.id),
                 supplier=supplier_by_id[latest_purchase[item.id].supplier_id] if item.id in latest_purchase else None,
             )
-            for item in ordered
-            if status is None or item.status == status
+            for item in catalog_snapshot.ingredients_by_usage()
         ]
-        return IngredientListView(
-            items=tuple(rows),
-            core_count=sum(1 for item in catalog_snapshot.ingredients if item.status == "CORE"),
-            later_count=sum(1 for item in catalog_snapshot.ingredients if item.status == "LATER"),
-        )
+        return IngredientListView(items=tuple(rows))

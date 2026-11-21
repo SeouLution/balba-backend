@@ -1,7 +1,8 @@
 """작업 루프의 재시도·DEAD·복구·dedupe, 스케줄, 밤사이 변경과 푸시, 실패 복구(A04)."""
 
+import json
 import re
-from datetime import date, datetime, time
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -15,6 +16,7 @@ from app.infrastructure.providers.ports import (
     HourlyWeather,
     ProviderInvalidPayload,
     ProviderUnavailable,
+    WeatherObservation,
 )
 from app.shared.types import KST
 from tests import helpers
@@ -187,7 +189,7 @@ async def test_work_survives_a_restart_and_runs_once(api, deps, runner):
     assert sum(1 for key in states if key.startswith("recipe:")) == 1
 
 
-async def test_same_cell_is_replaced_and_price_follows_the_latest_file(api, deps, runner):
+async def test_same_cell_is_replaced_by_the_latest_file(api, deps, runner):
     ids = await onboard(api, deps, runner)
     newer = helpers.sales_csv({"김밥": (70, 4500)}, date(2026, 11, 9), date(2026, 11, 9))
     await helpers.upload_sales(api, runner, ids["storeId"], newer)
@@ -197,10 +199,31 @@ async def test_same_cell_is_replaced_and_price_follows_the_latest_file(api, deps
         menu=ids["menus"]["김밥"],
     )
     assert cell[0].quantity == 70
-    prices = await helpers.fetch_all(deps, "SELECT name, unit, price FROM menu ORDER BY name")
-    assert [tuple(row) for row in prices] == [("김밥", "줄", 4500), ("떡볶이", "인분", 5000), ("어묵탕", "인분", 6000)]
+    menus = await helpers.fetch_all(deps, "SELECT name FROM menu ORDER BY name")
+    assert [row.name for row in menus] == ["김밥", "떡볶이", "어묵탕"]
     assert (await helpers.fetch_all(deps, "SELECT generation_status FROM store"))[0].generation_status == "READY"
     assert deps.providers.recipes.calls == 1
+
+
+async def test_model_is_fitted_after_sales_even_when_past_weather_fails(api, deps, runner):
+    first_day = date(2026, 9, 29)
+    deps.providers.observations.records = [
+        WeatherObservation(first_day + timedelta(days=offset), Decimal(15), Decimal(0)) for offset in range(42)
+    ]
+    ids = await onboard(api, deps, runner)
+    assert await helpers.count(deps, "weather_observation") == 42
+    model = (await helpers.fetch_all(deps, "SELECT forecast_model FROM store"))[0].forecast_model
+    assert (model["weights"], model["tunedDays"], model["holdoutError"]) == ({"weekday": 1, "weather": 1}, 42, None)
+    assert model["weatherIndex"][ids["menus"]["김밥"]] == {"2:DRY": 1}
+
+    deps.providers.observations.error = ProviderUnavailable("timeout")
+    await helpers.execute(deps, "DELETE FROM weather_observation")
+    newer = helpers.sales_csv({"김밥": (70, 4500)}, date(2026, 11, 9), date(2026, 11, 9))
+    await helpers.upload_sales(api, runner, ids["storeId"], newer)
+    assert set((await helpers.job_states(deps)).values()) == {"SUCCEEDED"}
+    refitted = (await helpers.fetch_all(deps, "SELECT forecast_model FROM store"))[0].forecast_model
+    assert refitted["weatherIndex"] == {} and refitted["fittedAt"] is not None
+    assert await helpers.count(deps, "forecast") == 6
 
 
 async def test_recipe_generation_failure_surfaces_as_500(api, deps, runner):
@@ -208,16 +231,14 @@ async def test_recipe_generation_failure_surfaces_as_500(api, deps, runner):
     store_id = (await api.call("createStore", 201, json=helpers.store_body())).json()["id"]
     content = helpers.sales_csv(SALES, date(2026, 11, 1), date(2026, 11, 9))
     await helpers.upload_sales(api, runner, store_id, content)
-    await api.call("listIngredientCandidates", 500, storeId=store_id)
     await api.call("listRecipes", 500, storeId=store_id)
-    await api.call("setCoreIngredients", 422, storeId=store_id, json={"ingredientIds": ["ing_x"]})
     assert await helpers.count(deps, "ingredient") == 0
 
 
 async def test_receipt_reading_failures(api, deps, runner):
     ids = await onboard(api, deps, runner)
     store_id = ids["storeId"]
-    image = receipt_image("대한식자재", "2026-11-08", [{"name": "계란", "quantity": 1, "unit": "판"}])
+    image = receipt_image("대한식자재", "2026-11-08", [{"name": "계란", "amount": 30, "unit": "개"}])
 
     deps.providers.receipts.error = ProviderInvalidPayload("refusal")
     refused = await helpers.scan_receipts(api, runner, store_id, [image])
@@ -279,6 +300,11 @@ async def test_overnight_change_and_morning_push(api, deps, runner):
     ids = await onboard(api, deps, runner)
     store_id, gimbap = ids["storeId"], ids["menus"]["김밥"]
     await api.call("putPushToken", 204, storeId=store_id, json={"token": helpers.PUSH_TOKEN})
+    await helpers.execute(
+        deps,
+        "UPDATE store SET forecast_model = jsonb_set(forecast_model, '{weatherIndex}', CAST(:index AS jsonb))",
+        index=json.dumps({gimbap: {"1:WET": 0.9}}),
+    )
     deps.providers.weather.day = DayWeather(
         tuple(HourlyWeather(datetime.combine(WED, time(hour), KST), Decimal(7), "CLOUDY") for hour in range(6, 23)),
         Decimal(9),
@@ -290,7 +316,7 @@ async def test_overnight_change_and_morning_push(api, deps, runner):
     await runner.run_until_idle()
     await helpers.release_postponed_jobs(deps)
     await runner.run_until_idle()
-    assert deps.providers.push.sent == [(helpers.PUSH_TOKEN, "내일 준비량이 나왔어요", "김밥 50줄 등 3개 메뉴", "/")]
+    assert deps.providers.push.sent == [(helpers.PUSH_TOKEN, "내일 준비량이 나왔어요", "김밥 50인분 등 3개 메뉴", "/")]
     night = (await api.call("getHome", 200, storeId=store_id)).json()
     assert night["tiles"]["weather"] == {"temperatureC": 9, "condition": "CLOUDY", "text": "흐림", "changeText": None}
     assert night["forecast"]["items"][0]["previousRecommended"] is None
@@ -312,17 +338,17 @@ async def test_overnight_change_and_morning_push(api, deps, runner):
     await runner.run_until_idle()
     await helpers.release_postponed_jobs(deps)
     await runner.run_until_idle()
-    assert deps.providers.push.sent[1][1:3] == ("오늘 미리 만들어둘 양", "김밥 45줄 등 3개 메뉴")
+    assert deps.providers.push.sent[1][1:3] == ("오늘 미리 만들어둘 양", "김밥 45인분 등 3개 메뉴")
     home = (await api.call("getHome", 200, storeId=store_id)).json()
     first = home["forecast"]["items"][0]
     assert (first["recommended"], first["previousRecommended"]) == (45, 50)
-    assert first["summaryText"] == "지난 4주 수요일 평균 50줄 · 비 -10%"
+    assert first["summaryText"] == "평소 수요일 50인분 · 비 -10%"
     assert first["comparison"] == {"direction": "LESS", "diff": -5}
     assert home["tiles"]["weather"]["text"] == "비 · 14시부터"
     assert home["tiles"]["weather"]["changeText"] == "흐림 → 비 · 14시부터"
     assert home["banners"][0] == {
         "type": "OVERNIGHT_CHANGE",
-        "title": "밤사이 예보가 바뀌어 김밥을 5줄 줄였어요",
+        "title": "밤사이 예보가 바뀌어 김밥을 5인분 줄였어요",
         "message": None,
     }
 
@@ -424,7 +450,7 @@ async def test_events_feed_forecast_order_plan_and_home(api, deps, runner):
     assert event["startAt"] == "2026-11-11T12:00:00+09:00"
     first = home["forecast"]["items"][0]
     assert (first["recommended"], first["eventDiff"]) == (60, 10)
-    assert first["summaryText"] == "지난 4주 수요일 평균 50줄 · 행사 +20%"
+    assert first["summaryText"] == "평소 수요일 50인분 · 행사 +20%"
     assert first["comparison"] == {"direction": "MORE", "diff": 10}
     assert [banner["type"] for banner in home["banners"]] == ["FIRST_FORECAST"]
     plan = (await api.call("getOrderPlan", 200, storeId=store_id, targetDate="2026-11-11")).json()
@@ -457,6 +483,37 @@ async def test_events_feed_forecast_order_plan_and_home(api, deps, runner):
     await runner.run_until_idle()
     assert set((await helpers.job_states(deps)).values()) == {"SUCCEEDED"}
     assert await helpers.count(deps, "event") == 2
+
+
+async def test_low_stock_counts_menus_whose_forecast_is_missing(api, deps, runner):
+    deps.providers.recipes.recipes = {"떡볶이": [("떡", "g", 200)], "계란말이": [("계란", "개", 1)]}
+    store_id = (await api.call("createStore", 201, json=helpers.store_body())).json()["id"]
+    content = helpers.sales_csv({"떡볶이": (20, 5000), "계란말이": (35, 6000)}, date(2026, 9, 29), date(2026, 11, 9))
+    await helpers.upload_sales(api, runner, store_id, content)
+    egg_line = {
+        "name": "계란 특란 30구",
+        "amount": 60,
+        "unit": "개",
+        "linePrice": 17800,
+        "match": "계란",
+        "kind": "exact",
+    }
+    scan_id = await helpers.scan_receipts(
+        api, runner, store_id, [receipt_image("대한식자재", "2026-11-10", [egg_line])]
+    )
+    await api.call("confirmReceiptScan", 204, storeId=store_id, scanId=scan_id, json={"answers": []})
+    await helpers.execute(deps, "DELETE FROM forecast WHERE menu_id = (SELECT id FROM menu WHERE name = '계란말이')")
+    assert [
+        row.name for row in await helpers.fetch_all(deps, "SELECT name FROM forecast JOIN menu ON id = menu_id")
+    ] == [
+        "떡볶이",
+        "떡볶이",
+    ]
+
+    home = (await api.call("getHome", 200, storeId=store_id)).json()
+    assert [banner["title"] for banner in home["banners"] if banner["type"] == "LOW_STOCK"] == [
+        "계란 재고가 얼마 안 남았어요"
+    ]
 
 
 async def test_concurrent_requests_on_one_store_are_serialized(api, deps, runner):
@@ -494,7 +551,7 @@ async def test_concurrent_requests_on_one_store_are_serialized(api, deps, runner
     assert saved[0].adjusted in quantities
 
     image = receipt_image(
-        "대한식자재", "2026-11-08", [{"name": "계란 특란", "quantity": 2, "unit": "판", "unitPrice": 8900}]
+        "대한식자재", "2026-11-08", [{"name": "계란 특란", "amount": 60, "unit": "개", "linePrice": 17800}]
     )
     scan_id = await helpers.scan_receipts(api, runner, store_id, [image])
     await asyncio.gather(*(api.call("confirmReceiptScan", 204, storeId=store_id, scanId=scan_id) for _ in range(5)))

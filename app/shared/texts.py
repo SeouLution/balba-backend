@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from app.shared.types import KST, round_half_up
+from app.shared.types import KST, MENU_UNIT, round_half_up
 
 WEEKDAY_KO = "월화수목금토일"
 CONDITION_KO = {
@@ -55,15 +55,13 @@ def weather_change_text(night_text: str | None, new_text: str) -> str | None:
 
 
 def forecast_summary(
-    sample_weeks: int,
     target_date: date,
     baseline: Decimal,
-    unit: str,
     event_factor: Decimal,
     weather_condition: str | None,
     weather_factor: Decimal,
 ) -> str:
-    text = f"지난 {sample_weeks}주 {WEEKDAY_KO[target_date.weekday()]}요일 평균 {round_half_up(baseline)}{unit}"
+    text = f"평소 {WEEKDAY_KO[target_date.weekday()]}요일 {round_half_up(baseline)}{MENU_UNIT}"
     if event_factor != 1:
         text += f" · 행사 {percent_text(event_factor)}"
     if weather_factor != 1 and weather_condition is not None:
@@ -75,11 +73,11 @@ def first_forecast_banner(sales_weeks: int) -> tuple[str, str]:
     return "첫 예측이 준비됐어요", f"{sales_weeks}주치 판매 기록으로 계산했어요"
 
 
-def overnight_change_title(menu_name: str | None, diff: Decimal, unit: str) -> str:
+def overnight_change_title(menu_name: str | None, diff: Decimal) -> str:
     if menu_name is None:
         return "밤사이 날씨 예보가 바뀌었어요"
     verb = "줄였어요" if diff < 0 else "늘렸어요"
-    return f"밤사이 예보가 바뀌어 {josa(menu_name, '을', '를')} {qty_text(abs(diff))}{unit} {verb}"
+    return f"밤사이 예보가 바뀌어 {josa(menu_name, '을', '를')} {qty_text(abs(diff))}{MENU_UNIT} {verb}"
 
 
 def clock_text(moment: datetime) -> str:
@@ -108,12 +106,22 @@ def delivery_expected_banner(lines: list[tuple[str, Decimal, str]]) -> tuple[str
     return "어젯밤 발주한 재료가 오전에 들어와요", shown
 
 
-def discount_reason(quantity: Decimal, unit: str) -> str:
-    return f"예상보다 {qty_text(quantity)}{unit} 더 만들었어요"
+def _names_text(names: list[str], shown: int) -> str:
+    text = "·".join(names[:shown])
+    return text if len(names) <= shown else f"{text} 외 {len(names) - shown}개"
 
 
-def promo_text(menu_name: str) -> str:
-    return f"갓 만든 {menu_name}, 마감 전에 할인해요"
+def low_stock_banner(names: list[str], all_ordered: bool) -> tuple[str, str]:
+    message = (
+        "이미 발주한 재료예요 · 받았다면 영수증을 올려주세요"
+        if all_ordered
+        else "발주해 주세요 · 이미 발주했다면 영수증을 올려주세요"
+    )
+    return f"{_names_text(names, 2)} 재고가 얼마 안 남았어요", message
+
+
+def low_stock_push_suffix(names: list[str]) -> str:
+    return f" · {_names_text(names, 1)} 발주가 필요해요" if names else ""
 
 
 def phone_source_text(read_on: date) -> str:
@@ -146,6 +154,6 @@ def unreadable_lines_notice(purchased_on: date, supplier_name: str, line_count: 
     return f"{month_day(purchased_on)} {supplier_name} 영수증에서 {line_count}줄은 읽지 못해서 뺐어요"
 
 
-def push_message(slot: str, top_menu_name: str, planned: Decimal, unit: str, menu_count: int) -> tuple[str, str]:
+def push_message(slot: str, top_menu_name: str, planned: Decimal, menu_count: int) -> tuple[str, str]:
     title = "내일 준비량이 나왔어요" if slot == "NIGHT" else "오늘 미리 만들어둘 양"
-    return title, f"{top_menu_name} {qty_text(planned)}{unit} 등 {menu_count}개 메뉴"
+    return title, f"{top_menu_name} {qty_text(planned)}{MENU_UNIT} 등 {menu_count}개 메뉴"

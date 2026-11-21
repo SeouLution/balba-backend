@@ -10,6 +10,8 @@ KST = ZoneInfo("Asia/Seoul")
 DAYS = ("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
 QTY_STEP = Decimal("0.000001")
 ONE = Decimal(1)
+MENU_UNIT = "인분"
+INGREDIENT_UNITS = ("개", "g")
 
 
 class InvalidRequest(Exception):
