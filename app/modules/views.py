@@ -7,7 +7,7 @@ from app.bootstrap import Container
 from app.infrastructure.db.uow import UoW
 from app.modules import catalog, forecasting, ordering, receipts, sales, stores, suppliers
 from app.shared import texts
-from app.shared.types import KST, StoreContext, business_window
+from app.shared.types import KST, DayHours, StoreContext, business_window
 
 
 @dataclass(frozen=True)
@@ -26,6 +26,7 @@ class OrderSummary:
 @dataclass(frozen=True)
 class HomeView:
     store_name: str
+    business_hours: tuple[DayHours, ...]
     view: str
     target_date: date
     weather: forecasting.WeatherSnapshot | None
@@ -143,6 +144,7 @@ async def get_home(deps: Container, store_id: str) -> HomeView:
             order = order_summary(await ordering.plan_order(uow, deps, ctx, target_date))
         return HomeView(
             store_name=store.name,
+            business_hours=store.business_hours,
             view=view,
             target_date=target_date,
             weather=forecast_context.weather,

@@ -737,7 +737,7 @@ components:
         close: { $ref: "#/components/schemas/LocalTime" }
     BusinessHours:
       type: array
-      description: "프론트엔드에서 요일별 영업시간을 항상 7개(월~일)로 펼쳐서 전달합니다."
+      description: "월요일부터 일요일까지의 요일별 영업시간 7개."
       minItems: 7
       maxItems: 7
       items: { $ref: "#/components/schemas/DayHours" }
@@ -1104,9 +1104,10 @@ components:
     Home:
       type: object
       required:
-        [storeName, view, targetDate, tiles, banners, forecast]
+        [storeName, businessHours, view, targetDate, tiles, banners, forecast]
       properties:
         storeName: { type: string, examples: ["행복분식"] }
+        businessHours: { $ref: "#/components/schemas/BusinessHours" }
         view: { $ref: "#/components/schemas/HomeView" }
         targetDate: { type: string, format: date, examples: ["2026-11-11"] }
         tiles:

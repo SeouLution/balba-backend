@@ -4,7 +4,7 @@
 
 | 자료 | 검토 결과 | SHA-256 |
 |---|---|---|
-| `openapi.yaml` | 0.5.0-draft, 25 operations, 공개 HTTP 계약의 기준. 2026-11-19 `OrderPlanSummary.estimatedTotal`, `getHome`, `HomeView` 설명 갱신. 2026-11-21 `Alert`, `Home.cautions`, `IngredientList.notices`, `SurplusStockItem`, `DiscountRecommendations.surplusStock`, 배지 `SHORT_SHELF_LIFE` 삭제(D04, D37, D38) | `6958c93b9d2ca06235619da4759ff84a53b077359671332f59839db3d9b32eef` |
+| `openapi.yaml` | 0.5.0-draft, 25 operations, 공개 HTTP 계약의 기준. 2026-11-19 `OrderPlanSummary.estimatedTotal`, `getHome`, `HomeView` 설명 갱신. 2026-11-21 `Alert`, `Home.cautions`, `IngredientList.notices`, `SurplusStockItem`, `DiscountRecommendations.surplusStock`, 배지 `SHORT_SHELF_LIFE` 삭제(D04, D37, D38). `getHome` 응답에 `businessHours` 추가 | `ff1cce7cfbf99d9b4f64259ddb6813a0d1b0a31826ae9721bc9b9dc5ddddfb60` |
 | `docs/erd.dbml` | 16개 테이블. 2026-11-19 `background_job` 테이블, `store.first_forecast_at`, `receipt_scan.images` 추가. 2026-11-21 `ingredient.shelf_life_days` 삭제(D04) | `a3b65417e0570f2101f39b01c9ffd83678ede5aa5b699e25ae372003706b4c55` |
 | `seoulution-data-flow.pdf` | 다운로드 폴더에서 확인, 1페이지 전체 검토, 2026-11-18 작성 | `426312033ec619cd60638dc128c7fc87db2591931ee9aaaa8620c737fb870983` |
 | [Figma node 1:2](https://www.figma.com/design/n8dGkDWXOn3A1wAxg3N3dM/SeouLution-%EC%82%AC%EC%A0%84-%EC%A0%9C%EC%B6%9C%EB%AC%BC?node-id=1-2) | 2026-11-19 브라우저 보기 권한으로 TASK 1~4 화면과 설명 문구를 전부 확인. 화면이 이미지 레이어라 해시는 없음 | — |

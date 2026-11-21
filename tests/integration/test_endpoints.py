@@ -27,6 +27,8 @@ async def test_create_store_normalizes_hours_and_registers_geocode(api, deps):
     assert [item["day"] for item in created["businessHours"]] == helpers.DAYS
     assert created["businessHours"][0] == {"day": "MON", "closed": True}
     assert created["businessHours"][1] == {"day": "TUE", "closed": False, "open": "18:00", "close": "02:00"}
+    home = (await api.call("getHome", 200, storeId=created["id"])).json()
+    assert home["businessHours"] == created["businessHours"]
     assert await helpers.job_states(deps) == {f"geocode:{created['id']}": "READY"}
     row = (await helpers.fetch_all(deps, "SELECT generation_status, latitude, push_token FROM store"))[0]
     assert tuple(row) == ("GENERATING", None, None)
