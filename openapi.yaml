@@ -34,7 +34,7 @@ paths:
       tags: [0.0 계정]
       operationId: signUp
       summary: "회원 가입"
-      description: "가입과 동시에 가게 id를 하나 발급하고 로그인 쿠키를 내려줍니다. 이미 가입된 번호면 `CONFLICT`(409)."
+      description: "가입하고 로그인 쿠키를 내려줍니다. 가게 id는 아직 없어서 `storeId`는 `null`입니다. 이미 가입된 번호면 `CONFLICT`(409)."
       requestBody:
         required: true
         content:
@@ -52,7 +52,7 @@ paths:
       tags: [0.0 계정]
       operationId: logIn
       summary: "로그인"
-      description: "번호나 비밀번호가 틀리면 `UNAUTHORIZED`(401)."
+      description: "가게 정보를 저장한 계정이면 `storeId`를, 아니면 `null`을 줍니다. 번호나 비밀번호가 틀리면 `UNAUTHORIZED`(401)."
       requestBody:
         required: true
         content:
@@ -87,6 +87,28 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/Me" }
         default: { $ref: "#/components/responses/Error" }
+  /users/{userId}/store:
+    get:
+      tags: [0.0 계정]
+      operationId: getUserStore
+      summary: "사용자의 가게 id"
+      description: "가게 정보를 아직 저장하지 않았으면 `storeId`는 `null`. 없는 사용자면 `NOT_FOUND`(404)."
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema: { type: string, examples: ["usr_3b9c0"] }
+      responses:
+        "200":
+          description: "가게 id"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [storeId]
+                properties:
+                  storeId: { type: [string, "null"], examples: ["st_8f2k1"] }
+        default: { $ref: "#/components/responses/Error" }
   # ───────────── 1.0 시작하기 ─────────────
   /stores:
     post:
@@ -94,7 +116,7 @@ paths:
       operationId: createStore
       summary: "1.1 가게 정보 저장"
       description: |
-        로그인한 사용자의 가게 정보를 저장합니다. 가게 id는 가입 때 발급된 `/users/me`의 `storeId`를 그대로 쓰며, 응답의 `id`도 그 값입니다.
+        로그인한 사용자의 가게 정보를 저장하고 이때 가게 id를 발급합니다. 응답의 `id`가 이후 `/users/me`의 `storeId`가 됩니다.
         - 쿠키 `access_token`이 없거나 만료 · 위조되었으면 `UNAUTHORIZED`(401)
         - 이미 가게 정보를 저장한 계정이면 `CONFLICT`(409). 계정당 가게는 하나입니다.
       requestBody:
@@ -594,7 +616,7 @@ components:
       required: [userId, storeId, phoneNumber]
       properties:
         userId: { type: string, examples: ["usr_3b9c0"] }
-        storeId: { type: string, examples: ["st_8f2k1"] }
+        storeId: { type: [string, "null"], description: "가게 정보를 저장하기 전에는 null", examples: ["st_8f2k1"] }
         phoneNumber: { type: string, examples: ["01012345678"] }
     LocalTime:
       type: string

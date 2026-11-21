@@ -1,4 +1,4 @@
-"""24개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
+"""25개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
 
 from typing import Annotated
 
@@ -76,6 +76,11 @@ async def get_me(deps: Deps, access_token: Annotated[str | None, Cookie()] = Non
     return _json(_account_json(await accounts.get_account(deps, user_id)))
 
 
+@router.get("/users/{userId}/store", operation_id="getUserStore")
+async def get_user_store(userId: str, deps: Deps):
+    return _json({"storeId": await accounts.store_id_of(deps, userId)})
+
+
 @router.post("/stores", operation_id="createStore")
 async def create_store(body: dto.StoreCreateIn, deps: Deps, access_token: Annotated[str | None, Cookie()] = None):
     account = await accounts.get_account(deps, accounts.verified_user_id(deps, access_token))
@@ -89,7 +94,7 @@ async def create_store(body: dto.StoreCreateIn, deps: Deps, access_token: Annota
         for item in body.businessHours
     )
     payload = stores.StoreCreateInput(body.name, body.category, body.address.roadAddress, hours)
-    return _json(presenters.store(await stores.create_store(deps, account.store_id, payload)), 201)
+    return _json(presenters.store(await stores.create_store(deps, account.user_id, payload)), 201)
 
 
 @router.put("/stores/{storeId}/push-token", operation_id="putPushToken")

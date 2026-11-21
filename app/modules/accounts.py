@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.bootstrap import Container
 from app.infrastructure.db.tables import app_user
-from app.shared.types import Conflict, Unauthorized, new_id
+from app.shared.types import Conflict, NotFound, Unauthorized, new_id
 
 TOKEN_LIFETIME = timedelta(days=1)
 JWT_HEADER = {"alg": "HS256", "typ": "JWT"}
@@ -20,7 +20,7 @@ JWT_HEADER = {"alg": "HS256", "typ": "JWT"}
 @dataclass(frozen=True)
 class Account:
     user_id: str
-    store_id: str
+    store_id: str | None
     phone_number: str
 
 
@@ -66,7 +66,7 @@ def _account(row) -> Account:
 
 async def sign_up(deps: Container, phone_number: str, password: str) -> Account:
     salt = secrets.token_bytes(16)
-    account = Account(user_id=new_id("usr"), store_id=new_id("st"), phone_number=phone_number)
+    account = Account(user_id=new_id("usr"), store_id=None, phone_number=phone_number)
     try:
         async with deps.db.write() as uow:
             await uow.execute(
@@ -74,7 +74,6 @@ async def sign_up(deps: Container, phone_number: str, password: str) -> Account:
                     id=account.user_id,
                     phone_number=phone_number,
                     password_hash=f"{salt.hex()}${_hash_password(password, salt).hex()}",
-                    store_id=account.store_id,
                     created_at=deps.clock.now(),
                 )
             )
@@ -100,3 +99,11 @@ async def get_account(deps: Container, user_id: str) -> Account:
     if row is None:
         raise Unauthorized("user no longer exists")
     return _account(row)
+
+
+async def store_id_of(deps: Container, user_id: str) -> str | None:
+    async with deps.db.read() as uow:
+        row = (await uow.execute(select(app_user.c.store_id).where(app_user.c.id == user_id))).first()
+    if row is None:
+        raise NotFound("user")
+    return row.store_id

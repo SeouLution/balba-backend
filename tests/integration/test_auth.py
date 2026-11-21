@@ -14,7 +14,7 @@ def auth_header(response) -> dict:
 async def test_signup_login_me_logout(api, deps):
     signed_up = await api.call("signUp", 201, json=CREDENTIALS)
     body = signed_up.json()
-    assert body["storeId"].startswith("st_") and body["phoneNumber"] == "01012345678"
+    assert body["storeId"] is None and body["phoneNumber"] == "01012345678"
     set_cookie = signed_up.headers["set-cookie"].lower()
     assert "httponly" in set_cookie and "max-age=86400" in set_cookie
 
@@ -58,10 +58,15 @@ async def test_wrong_credentials_and_bad_tokens_are_unauthorized(api):
     await api.call("getMe", 401, headers={"cookie": f"access_token={header}.{payload}.forged"})
 
 
-async def test_create_store_uses_signup_store_id(api):
+async def test_create_store_issues_store_id(api):
     signed_up = await api.call("signUp", 201, json=CREDENTIALS)
+    user_id = signed_up.json()["userId"]
+    assert (await api.call("getUserStore", 200, userId=user_id)).json() == {"storeId": None}
     created = await api.call("createStore", 201, json=helpers.store_body(), headers=auth_header(signed_up))
-    assert created.json()["id"] == signed_up.json()["storeId"]
+    store_id = created.json()["id"]
+    assert (await api.call("logIn", 200, json=CREDENTIALS)).json()["storeId"] == store_id
+    assert (await api.call("getUserStore", 200, userId=user_id)).json() == {"storeId": store_id}
+    await api.call("getUserStore", 404, userId="usr_missing")
     await api.call("getHome", 200, storeId=created.json()["id"])
     await api.call("createStore", 409, json=helpers.store_body(), headers=auth_header(signed_up))
     await api.call("createStore", 401, json=helpers.store_body(), headers={})
