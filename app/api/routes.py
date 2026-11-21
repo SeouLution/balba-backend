@@ -77,7 +77,8 @@ async def get_me(deps: Deps, access_token: Annotated[str | None, Cookie()] = Non
 
 
 @router.post("/stores", operation_id="createStore")
-async def create_store(body: dto.StoreCreateIn, deps: Deps):
+async def create_store(body: dto.StoreCreateIn, deps: Deps, access_token: Annotated[str | None, Cookie()] = None):
+    account = await accounts.get_account(deps, accounts.verified_user_id(deps, access_token))
     hours = tuple(
         DayHours(
             day=item.day,
@@ -88,7 +89,7 @@ async def create_store(body: dto.StoreCreateIn, deps: Deps):
         for item in body.businessHours
     )
     payload = stores.StoreCreateInput(body.name, body.category, body.address.roadAddress, hours)
-    return _json(presenters.store(await stores.create_store(deps, payload)), 201)
+    return _json(presenters.store(await stores.create_store(deps, account.store_id, payload)), 201)
 
 
 @router.put("/stores/{storeId}/push-token", operation_id="putPushToken")

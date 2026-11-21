@@ -85,8 +85,17 @@ class Api:
 
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
+        self.signups = 0
+
+    async def new_account_cookie(self) -> dict:
+        self.signups += 1
+        credentials = {"phoneNumber": f"01090{self.signups:06d}", "password": "password123"}
+        signed_up = await self.call("signUp", 201, json=credentials)
+        return {"cookie": f"access_token={signed_up.cookies['access_token']}"}
 
     async def call(self, operation_id: str, expect: int, **kwargs) -> httpx.Response:
+        if operation_id == "createStore" and "headers" not in kwargs:
+            kwargs["headers"] = await self.new_account_cookie()
         method, path, _ = OPERATIONS[operation_id]
         path_params = {key: kwargs.pop(key) for key in list(kwargs) if "{" + key + "}" in path}
         response = await self.client.request(method, path.format(**path_params), **kwargs)

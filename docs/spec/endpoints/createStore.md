@@ -18,18 +18,18 @@
 
 ## 책임과 경계
 
-stores / `CreateStore.execute(StoreCreateInput) → StoreSnapshot`. StoreCreateInput은 name/category/roadAddress/7개 DayHours의 검증된 타입이다. 생성 응답은 Store이며 push token, generationStatus, 좌표는 노출하지 않는다.
+stores / `CreateStore.execute(storeId, StoreCreateInput) → StoreSnapshot`. storeId는 쿠키 `access_token`으로 찾은 계정의 `app_user.store_id`다(가입 때 발급). StoreCreateInput은 name/category/roadAddress/7개 DayHours의 검증된 타입이다. 생성 응답은 Store이며 push token, generationStatus, 좌표는 노출하지 않는다.
 
 ## 처리 순서
 
 1. name trim 후 1~40자, 주소 trim 후 nonempty, category enum을 검증한다. DayHours는 MON~SUN 각각 한 개, 영업일 open/close 필수다. 휴무일 시간 값은 저장 시 제거한다.
-2. ID를 발급하고 store에 name, category, road_address, business_hours를 MON→SUN 순으로 저장한다. 좌표/push_token/first_forecast_at은 null, generation_status=GENERATING이다.
+2. 계정의 store_id로 store 행을 만들고 name, category, road_address, business_hours를 MON→SUN 순으로 저장한다. 좌표/push_token/first_forecast_at은 null, generation_status=GENERATING이다.
 3. 동일 UoW에 GEOCODE_STORE job을 넣는다. 외부 주소 API를 기다리지 않는다. 메뉴가 없으므로 이 시점에 AI 레시피 job은 만들지 않는다.
 4. commit 후 저장한 값에서 Store DTO를 만들어 201. 주소 정규화 실패가 가게 생성을 취소하지 않는다.
 
 ## 원자성·실패
 
-store와 job은 함께 저장된다. 같은 POST는 새 가게를 만든다. 이름/주소 중복은 store unique가 아니므로 기존 가게를 임의 재사용하지 않는다. DB 장애는 500, 요청 구조/요일 오류는 422. 생성 응답 유실 후 재시도는 중복 가게를 만들 수 있다.
+store와 job은 함께 저장된다. 계정당 가게는 하나다. 이미 store 행이 있는 계정의 POST는 409다. 쿠키가 없거나 잘못되면 401, DB 장애는 500, 요청 구조/요일 오류는 422. 생성 응답 유실 후 재시도는 409를 받으므로 프론트는 `/users/me`의 storeId로 이어 가면 된다.
 
 ## 완료 조건
 
