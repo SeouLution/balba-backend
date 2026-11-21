@@ -1,10 +1,12 @@
 # 엔드포인트 구현 인덱스
 
-OpenAPI의 가게 API 24개 operation과 1:1 대응한다(계정 4개 제외). 각 파일은 공개 계약, 모듈 경계, 처리 순서, 원자성/실패, 완료 조건을 정의한다. `/health`, `/openapi.yaml`, `/scalar`는 별도의 [기반 유지 조건](../infrastructure/runtime.md)이다.
+OpenAPI의 가게 API 26개 operation과 1:1 대응한다(계정 4개 제외). 각 파일은 공개 계약, 모듈 경계, 처리 순서, 원자성/실패, 완료 조건을 정의한다. `/health`, `/openapi.yaml`, `/scalar`는 별도의 [기반 유지 조건](../infrastructure/runtime.md)이다.
 
 | operationId / 상세 명세 | Method | 경로 | 화면 / 목적 |
 |---|---|---|---|
 | [createStore](createStore.md) | POST | `/stores` | 1.1 가게 정보 저장 |
+| [getStore](getStore.md) | GET | `/stores/{storeId}` | 가게 정보 조회 (수정 화면 초기값) |
+| [updateStore](updateStore.md) | PUT | `/stores/{storeId}` | 가게 정보 수정 |
 | [putPushToken](putPushToken.md) | PUT | `/stores/{storeId}/push-token` | 푸시 토큰 등록 (전날 밤 20:00 준비량 · 재고 부족 알림, 아침 07:30 알림) |
 | [listRecipes](listRecipes.md) | GET | `/stores/{storeId}/recipes` | 1.6 레시피 초안 |
 | [saveRecipes](saveRecipes.md) | PUT | `/stores/{storeId}/recipes` | 1.6 '저장하고 홈으로' |

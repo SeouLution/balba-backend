@@ -58,6 +58,26 @@ async def test_create_store_rejects_invalid_input(api, deps, overrides):
     assert await helpers.count(deps, "store") == 0
 
 
+async def test_update_store_replaces_fields_and_refreshes_location_or_forecast(api, deps):
+    store_id = await new_store(api)
+    await helpers.execute(deps, "UPDATE store SET latitude = 37.5, longitude = 126.9")
+    moved = helpers.store_body(name="오늘애김밥 성수역점", address={"roadAddress": "서울 성동구 아차산로 126"})
+    updated = (await api.call("updateStore", 200, storeId=store_id, json=moved)).json()
+    assert (await api.call("getStore", 200, storeId=store_id)).json() == updated
+    assert (updated["id"], updated["name"], updated["address"]) == (store_id, "오늘애김밥 성수역점", moved["address"])
+    assert tuple((await helpers.fetch_all(deps, "SELECT latitude, longitude FROM store"))[0]) == (None, None)
+    jobs = await helpers.job_states(deps)
+    assert sum(key.startswith(f"geocode:{store_id}:chg_") for key in jobs) == 1
+
+    rehoured = {**moved, "businessHours": helpers.business_hours(closed_days=("SUN",))}
+    assert (await api.call("updateStore", 200, storeId=store_id, json=rehoured)).json()["businessHours"][6] == {
+        "day": "SUN",
+        "closed": True,
+    }
+    assert sum(key.startswith(f"forecast:{store_id}:") for key in await helpers.job_states(deps)) == 2
+    await api.call("updateStore", 422, storeId=store_id, json=helpers.store_body(name=" "))
+
+
 async def test_push_token_is_replaced_and_validated(api, deps):
     store_id = await new_store(api)
     await api.call("putPushToken", 204, storeId=store_id, json={"token": helpers.PUSH_TOKEN})
