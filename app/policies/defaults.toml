@@ -1,0 +1,146 @@
+# SeouLution 정책 기본값 — AI 초안 (2026-11-19)
+#
+# 이 파일의 숫자는 실측 근거가 없는 초안이다. 값을 바꾸려면 이 파일만 고친다.
+# 구현 P1에서 app/policies/defaults.toml 로 옮기고(복사본을 두지 않는다) 서버 시작 때 한 번 읽는다.
+# 계산 규칙은 domain/calculations.md, 이 값이 쓰이는 자리는 각 절의 주석에 적었다.
+
+version = "draft-2026-11-19"
+
+# ───────── 홈 (C01) ─────────
+[home]
+# 이 시각부터 홈이 '내일 준비량 · 발주' 화면으로 바뀐다. 그 전은 '오늘 만들 양' 화면.
+tomorrow_start = "20:00"
+
+# ───────── 예측 (C02) ─────────
+[forecast]
+# 평소 대비 차이(반올림한 정수)의 절댓값이 이 값 이하면 '평소와 비슷'.
+similar_max_diff = 1
+# 반경(m) 안에서 대상일 영업시간과 겹치는 행사가 하나라도 있으면 곱하는 계수. 행사가 여러 개여도 한 번만 곱한다.
+event_radius_meters = 3000
+event_factor = 1.20
+# 서울 문화행사 중 근처 행사로 쓰는 분류. 분류 이름이 아래 값으로 시작하면 쓴다(축제는 '축제-문화/예술' 등 전부).
+# 교육/체험, 전시/미술, 영화, 기타는 상시 프로그램이 많아 뺀다.
+event_categories = ["축제", "콘서트", "클래식", "연극", "뮤지컬/오페라", "무용", "국악", "독주/독창회"]
+
+# 날씨 계수: 대상일 예보 상태별로 곱한다. 여기 없는 상태는 1.00.
+[forecast.weather_factor]
+CLEAR = 1.00
+PARTLY_CLOUDY = 1.00
+CLOUDY = 1.00
+RAIN = 0.90
+SHOWER = 0.95
+SNOW = 0.85
+RAIN_SNOW = 0.85
+
+# 업종별로 위 값을 덮어쓴다. 적지 않은 업종 · 상태는 위 기본값을 쓴다.
+[forecast.weather_factor_by_category.GUKBAP]
+RAIN = 1.05
+SNOW = 1.05
+RAIN_SNOW = 1.05
+
+# ───────── 메뉴 단위 (판매 반영 때 신규 메뉴에 붙임) ─────────
+# 메뉴 이름에 keyword가 들어 있으면 그 단위. 위에서부터 먼저 맞는 것을 쓴다. 아무것도 안 맞으면 default.
+[menu_unit]
+default = "개"
+rules = [
+  { keyword = "김밥", unit = "줄" },
+  { keyword = "떡볶이", unit = "인분" },
+  { keyword = "덮밥", unit = "인분" },
+  { keyword = "볶음밥", unit = "인분" },
+  { keyword = "비빔밥", unit = "인분" },
+  { keyword = "국밥", unit = "인분" },
+  { keyword = "찌개", unit = "인분" },
+  { keyword = "탕", unit = "인분" },
+  { keyword = "국수", unit = "인분" },
+  { keyword = "라면", unit = "인분" },
+  { keyword = "우동", unit = "인분" },
+  { keyword = "돈까스", unit = "인분" },
+  { keyword = "정식", unit = "인분" },
+  { keyword = "백반", unit = "인분" },
+  { keyword = "순대", unit = "인분" },
+  { keyword = "튀김", unit = "인분" },
+]
+
+# ───────── 재료 기본 유통기한 (C04 · 재료가 처음 만들어질 때 ingredient.shelf_life_days 에 넣음) ─────────
+# 입고일을 1일째로 센 일수. 재료 이름이 key와 같으면 그 값, 아니면 이름에 들어 있는 가장 긴 key의 값.
+# 어느 것도 안 맞으면 유통기한 없음(null) → 그 재료는 유통기한 알림 · 할인 추천에서 빠진다.
+[shelf_life_days]
+"계란" = 21
+"김" = 180
+"단무지" = 30
+"어묵" = 3
+"떡" = 5
+"돼지고기" = 4
+"소고기" = 4
+"닭고기" = 3
+"햄" = 14
+"맛살" = 14
+"참치캔" = 365
+"치즈" = 30
+"두부" = 5
+"콩나물" = 3
+"시금치" = 3
+"오이" = 5
+"당근" = 14
+"양파" = 14
+"대파" = 7
+"우엉" = 30
+"김치" = 30
+"쌀" = 180
+"밀가루" = 180
+"우유" = 7
+"생크림" = 5
+"버터" = 30
+
+# ───────── 재료 배지 (1.4 핵심 재료 고르기) ─────────
+[tags]
+# 유통기한이 이 일수 이하면 '유통기한 짧음'.
+short_shelf_life_max_days = 3
+# 이름에 이 단어가 들어 있으면 '비쌈'. 1.4는 영수증을 찍기 전이라 단가가 아니라 이름으로 정한다.
+expensive_keywords = ["돼지고기", "소고기", "닭고기", "새우", "오징어", "낙지", "치즈", "버터", "참기름"]
+# 쓰이는 메뉴가 이 수 이상이거나, '유통기한 짧음' 또는 '비쌈'이면 '추천'.
+recommended_min_menus = 3
+
+# ───────── 거래처 · 단가 (C03) ─────────
+[supplier]
+# 서로 다른 영수증 날짜가 이 수 이상이면 그 요일들을 주문 요일로 추정한다(ESTIMATED). 그 미만은 UNKNOWN.
+order_days_min_receipt_dates = 3
+
+[price]
+# 같은 재료의 최근 두 단가 차이가 이 비율 이상이면 단가 변동 알림.
+change_alert_ratio = 0.10
+
+# ───────── 할인 (C06) ─────────
+[discount]
+# 이 시각부터 할인 추천 · 남을 재고를 보여준다. 그 전에는 빈 목록.
+base_time = "17:00"
+# 추천 할인 폭(%).
+recommended_percent = 30
+# 추천 시작 시각 = 그날 마감 시각 − 이 분. 기준 시각보다 이르면 기준 시각으로 올린다.
+start_minutes_before_close = 120
+# 유통기한이 내일부터 이 일수 안인 남은 재고도 '남을 것 같은 재고'에 보여준다.
+surplus_within_days = 3
+
+# 할인 채널: 이 순서 그대로 응답한다. launch_url이 빈 문자열이면 launchUrl=null.
+# 앱을 여는 주소는 확인하지 못해 비워 두었다. 주소를 확인하면 여기에 넣는다.
+[[discount.channels]]
+app = "BAEMIN"
+launch_url = ""
+supports_paste = false
+
+[[discount.channels]]
+app = "COUPANG_EATS"
+launch_url = ""
+supports_paste = false
+
+[[discount.channels]]
+app = "STORE_NOTICE"
+launch_url = ""
+supports_paste = true
+
+# ───────── 업로드 한도 ─────────
+[upload]
+sales_file_max_mib = 20
+sales_max_rows = 100000
+receipt_image_max_mib = 10
+receipt_images_total_max_mib = 100
