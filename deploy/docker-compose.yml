@@ -1,0 +1,96 @@
+# balba 프로덕션 스택 — 서버 위치: /opt/balba/docker-compose.yml
+#
+# 항상 두 env 파일과 함께 실행한다 (deploy.sh가 그렇게 호출):
+#   docker compose --env-file .env.production --env-file .images.env <명령>
+#
+#   .env.production : 시크릿과 호스트명 (수동 관리, chmod 600)
+#   .images.env     : 현재 배포된 이미지 태그 (deploy.sh가 갱신)
+#
+# ⚠️ `down -v` 금지 — postgres 볼륨이 지워진다.
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: balba-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_HOST: ${SITE_HOST}
+      API_HOST: ${API_HOST}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - balba-net
+    logging: *logging
+
+  backend:
+    image: ghcr.io/seoulution/balba-backend:${BACKEND_TAG}
+    container_name: balba-backend
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    expose:
+      - "8000"
+    volumes:
+      - uploads_data:/var/lib/balba/uploads
+    networks:
+      - balba-net
+    logging: *logging
+
+  frontend:
+    image: ghcr.io/seoulution/balba-frontend:${FRONTEND_TAG}
+    container_name: balba-frontend
+    restart: unless-stopped
+    expose:
+      - "80"
+    networks:
+      - balba-net
+    logging: *logging
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: balba-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: Asia/Seoul
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - balba-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+networks:
+  balba-net:
+    name: balba-net
+
+volumes:
+  postgres_data:
+    name: balba_postgres_data
+  uploads_data:
+    name: balba_uploads_data
+    external: true
+  caddy_data:
+    name: balba_caddy_data
+  caddy_config:
+    name: balba_caddy_config

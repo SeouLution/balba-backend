@@ -1,0 +1,26 @@
+# balba 리버스 프록시 — 서버 위치: /opt/balba/Caddyfile
+# 호스트명은 .env.production 의 SITE_HOST / API_HOST 에서 온다.
+# 인증서는 Caddy가 Let's Encrypt로 자동 발급·갱신한다.
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		-Server
+	}
+}
+
+# 프론트엔드
+{$SITE_HOST} {
+	encode zstd gzip
+	import security_headers
+	reverse_proxy frontend:80
+}
+
+# 백엔드 API
+{$API_HOST} {
+	encode zstd gzip
+	import security_headers
+	reverse_proxy backend:8000
+}
