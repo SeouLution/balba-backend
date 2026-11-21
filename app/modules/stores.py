@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from sqlalchemy import insert, select, update
+from sqlalchemy.exc import IntegrityError
 
 from app.bootstrap import Container
 from app.infrastructure.db.tables import store
@@ -10,11 +11,11 @@ from app.infrastructure.db.uow import UoW
 from app.infrastructure.jobs import queue
 from app.shared.types import (
     DAYS,
+    Conflict,
     DayHours,
     InvalidRequest,
     NotFound,
     hhmm,
-    new_id,
     normalize_name,
     parse_hhmm,
 )
@@ -113,27 +114,29 @@ def validated_business_hours(hours: list[DayHours]) -> tuple[DayHours, ...]:
     return tuple(ordered)
 
 
-async def create_store(deps: Container, payload: StoreCreateInput) -> StoreSnapshot:
+async def create_store(deps: Container, store_id: str, payload: StoreCreateInput) -> StoreSnapshot:
     name = normalize_name(payload.name)
     road_address = normalize_name(payload.road_address)
     if not 1 <= len(name) <= 40 or not road_address:
         raise InvalidRequest("name or address is empty or too long")
     hours = validated_business_hours(list(payload.business_hours))
-    store_id = new_id("st")
-    async with deps.db.write() as uow:
-        await uow.execute(
-            insert(store).values(
-                id=store_id,
-                name=name,
-                category=payload.category,
-                road_address=road_address,
-                business_hours=_hours_to_json(hours),
-                generation_status="GENERATING",
-                created_at=deps.clock.now(),
+    try:
+        async with deps.db.write() as uow:
+            await uow.execute(
+                insert(store).values(
+                    id=store_id,
+                    name=name,
+                    category=payload.category,
+                    road_address=road_address,
+                    business_hours=_hours_to_json(hours),
+                    generation_status="GENERATING",
+                    created_at=deps.clock.now(),
+                )
             )
-        )
-        await queue.enqueue(uow, "GEOCODE_STORE", {"storeId": store_id}, f"geocode:{store_id}")
-        return await require(uow, store_id)
+            await queue.enqueue(uow, "GEOCODE_STORE", {"storeId": store_id}, f"geocode:{store_id}")
+            return await require(uow, store_id)
+    except IntegrityError as error:
+        raise Conflict("store already created for this account") from error
 
 
 def validated_push_token(token: str) -> str:

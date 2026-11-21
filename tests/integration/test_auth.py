@@ -2,6 +2,8 @@ from datetime import timedelta
 
 import pytest
 
+from tests import helpers
+
 CREDENTIALS = {"phoneNumber": "01012345678", "password": "password123"}
 
 
@@ -54,3 +56,12 @@ async def test_wrong_credentials_and_bad_tokens_are_unauthorized(api):
     await api.call("getMe", 401, headers={"cookie": "access_token=garbage"})
     header, payload, _ = signed_up.cookies["access_token"].split(".")
     await api.call("getMe", 401, headers={"cookie": f"access_token={header}.{payload}.forged"})
+
+
+async def test_create_store_uses_signup_store_id(api):
+    signed_up = await api.call("signUp", 201, json=CREDENTIALS)
+    created = await api.call("createStore", 201, json=helpers.store_body(), headers=auth_header(signed_up))
+    assert created.json()["id"] == signed_up.json()["storeId"]
+    await api.call("getHome", 200, storeId=created.json()["id"])
+    await api.call("createStore", 409, json=helpers.store_body(), headers=auth_header(signed_up))
+    await api.call("createStore", 401, json=helpers.store_body(), headers={})
