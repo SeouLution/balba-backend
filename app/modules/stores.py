@@ -146,6 +146,11 @@ async def create_store(deps: Container, user_id: str, payload: StoreCreateInput)
         return await require(uow, store_id)
 
 
+async def get_store(deps: Container, store_id: str) -> StoreSnapshot:
+    async with deps.db.read() as uow:
+        return await require(uow, store_id)
+
+
 async def update_store(deps: Container, store_id: str, payload: StoreCreateInput) -> StoreSnapshot:
     name, road_address, hours = _validated_input(payload)
     change_id = new_id("chg")

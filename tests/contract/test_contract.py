@@ -52,7 +52,7 @@ def test_runtime_routes_match_openapi_one_to_one():
         for method, operation in item.items()
     }
     declared = {(method, "/v1" + path, operation_id) for operation_id, (method, path, _) in OPERATIONS.items()}
-    assert len(declared) == 30
+    assert len(declared) == 31
     assert runtime == declared
 
 

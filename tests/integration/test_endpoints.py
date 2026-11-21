@@ -63,6 +63,7 @@ async def test_update_store_replaces_fields_and_refreshes_location_or_forecast(a
     await helpers.execute(deps, "UPDATE store SET latitude = 37.5, longitude = 126.9")
     moved = helpers.store_body(name="오늘애김밥 성수역점", address={"roadAddress": "서울 성동구 아차산로 126"})
     updated = (await api.call("updateStore", 200, storeId=store_id, json=moved)).json()
+    assert (await api.call("getStore", 200, storeId=store_id)).json() == updated
     assert (updated["id"], updated["name"], updated["address"]) == (store_id, "오늘애김밥 성수역점", moved["address"])
     assert tuple((await helpers.fetch_all(deps, "SELECT latitude, longitude FROM store"))[0]) == (None, None)
     jobs = await helpers.job_states(deps)

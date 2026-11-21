@@ -1,4 +1,4 @@
-"""30개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
+"""31개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
 
 from typing import Annotated
 
@@ -110,6 +110,11 @@ def _store_input(body: dto.StoreCreateIn) -> stores.StoreCreateInput:
 async def create_store(body: dto.StoreCreateIn, deps: Deps, access_token: AccessToken = None):
     account = await accounts.get_account(deps, accounts.verified_user_id(deps, access_token))
     return _json(presenters.store(await stores.create_store(deps, account.user_id, _store_input(body))), 201)
+
+
+@router.get("/stores/{storeId}", operation_id="getStore", dependencies=[OwnsStore])
+async def get_store(storeId: str, deps: Deps):
+    return _json(presenters.store(await stores.get_store(deps, storeId)))
 
 
 @router.put("/stores/{storeId}", operation_id="updateStore", dependencies=[OwnsStore])

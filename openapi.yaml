@@ -135,6 +135,18 @@ paths:
   /stores/{storeId}:
     parameters:
       - $ref: "#/components/parameters/StoreId"
+    get:
+      tags: [1.0 시작하기]
+      operationId: getStore
+      summary: "가게 정보 조회"
+      description: "가게 이름 · 업종 · 주소 · 영업시간. 수정 화면의 초기값입니다."
+      responses:
+        "200":
+          description: "가게"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Store" }
+        default: { $ref: "#/components/responses/Error" }
     put:
       tags: [1.0 시작하기]
       operationId: updateStore
