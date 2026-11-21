@@ -7,7 +7,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import insert, select, update
 
 from app.bootstrap import Container
-from app.infrastructure.db.tables import receipt_line, receipt_scan, supplier
+from app.infrastructure.db.tables import receipt_line, receipt_scan
 from app.infrastructure.db.uow import UoW
 from app.infrastructure.jobs import queue
 from app.infrastructure.providers.ports import ProviderInvalidPayload, ReceiptReading
@@ -23,11 +23,13 @@ JPEG_SIGNATURE = b"\xff\xd8\xff"
 class ReceiptLot:
     receipt_line_id: int
     ingredient_id: str
-    supplier_id: str
+    supplier_id: str | None
     purchased_on: date
     quantity: Decimal
     unit_price: Decimal | None
-    product_name: str
+    product_name: str | None
+    source: str = "RECEIPT"
+    is_stock_reset: bool = False
 
 
 @dataclass(frozen=True)
@@ -55,15 +57,22 @@ class ReceiptScanView:
 async def lots(uow: UoW, store_id: str, through: date | None = None) -> list[ReceiptLot]:
     statement = (
         select(receipt_line)
-        .join(supplier, supplier.c.id == receipt_line.c.supplier_id)
-        .where(supplier.c.store_id == store_id)
+        .where(receipt_line.c.store_id == store_id)
         .order_by(receipt_line.c.purchased_on, receipt_line.c.id)
     )
     if through is not None:
         statement = statement.where(receipt_line.c.purchased_on <= through)
     return [
         ReceiptLot(
-            row.id, row.ingredient_id, row.supplier_id, row.purchased_on, row.quantity, row.unit_price, row.product_name
+            row.id,
+            row.ingredient_id,
+            row.supplier_id,
+            row.purchased_on,
+            row.quantity,
+            row.unit_price,
+            row.product_name,
+            row.source,
+            row.is_stock_reset,
         )
         for row in (await uow.execute(statement)).all()
     ]
@@ -73,10 +82,52 @@ async def latest(uow: UoW, store_id: str) -> dict[str, LatestPurchaseFact]:
     """재료별로 가장 최근 줄 하나에서 거래처·품명·단가를 함께 가져온다. 더 오래된 줄의 단가를 끌어오지 않는다."""
     facts: dict[str, LatestPurchaseFact] = {}
     for lot in await lots(uow, store_id):
+        if lot.source != "RECEIPT":
+            continue
         facts[lot.ingredient_id] = LatestPurchaseFact(
             lot.ingredient_id, lot.supplier_id, lot.product_name, lot.unit_price, lot.purchased_on, lot.receipt_line_id
         )
     return facts
+
+
+async def record_manual_purchase(
+    deps: Container,
+    store_id: str,
+    ingredient_id: str,
+    purchased_on: date | None,
+    quantity: Decimal,
+    is_stock_reset: bool,
+) -> tuple[ReceiptLot, catalog.IngredientSnapshot]:
+    ctx = deps.clock.context(store_id)
+    purchased_on = purchased_on or ctx.local_date
+    if purchased_on > ctx.local_date:
+        raise InvalidRequest("purchasedOn cannot be in the future")
+    if quantity < 0 or (quantity == 0 and not is_stock_reset):
+        raise InvalidRequest("quantity must be positive")
+    async with deps.db.write() as uow:
+        await stores.lock(uow, store_id)
+        target = (await catalog.snapshot(uow, store_id)).ingredient_by_id.get(ingredient_id)
+        if target is None:
+            raise NotFound("ingredient")
+        line_id = (
+            await uow.execute(
+                insert(receipt_line)
+                .values(
+                    store_id=store_id,
+                    source="MANUAL",
+                    is_stock_reset=is_stock_reset,
+                    supplier_id=None,
+                    purchased_on=purchased_on,
+                    ingredient_id=ingredient_id,
+                    product_name=None,
+                    quantity=quantity,
+                    unit_price=None,
+                )
+                .returning(receipt_line.c.id)
+            )
+        ).scalar_one()
+        lot = ReceiptLot(line_id, ingredient_id, None, purchased_on, quantity, None, None, "MANUAL", is_stock_reset)
+        return lot, target
 
 
 # ───────── 접수 ─────────
@@ -437,6 +488,9 @@ async def confirm_scan(deps: Container, store_id: str, scan_id: str, answers: li
                 amount = Decimal(line["amount"])
                 await uow.execute(
                     insert(receipt_line).values(
+                        store_id=store_id,
+                        source="RECEIPT",
+                        is_stock_reset=False,
                         supplier_id=target_supplier.id,
                         purchased_on=purchased_on,
                         ingredient_id=target.id,

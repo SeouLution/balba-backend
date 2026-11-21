@@ -95,14 +95,17 @@ Table receipt_scan {
 
 Table receipt_line {
   id int [pk, increment]
-  supplier_id text [not null, ref: > supplier.id]
+  store_id text [not null, ref: > store.id]
+  source text [not null, default: 'RECEIPT', note: 'RECEIPT 영수증 확정 · MANUAL 사장님 수기 입고']
+  is_stock_reset boolean [not null, default: false, note: 'true면 이 줄의 quantity를 그날의 재고로 보고 이전 장부를 무시 (MANUAL만)']
+  supplier_id text [ref: > supplier.id, note: 'RECEIPT면 필수, MANUAL이면 null']
   purchased_on date [not null]
   ingredient_id text [not null, ref: > ingredient.id]
-  product_name text [not null, note: '영수증에 적힌 품명 (계란 특란 30구). 발주 문구 · 같은 재료 판별용']
-  quantity numeric [not null, note: '입고량 (재료 단위). 영수증의 포장량 × 수량을 개 또는 g으로 환산한 값']
+  product_name text [note: '영수증에 적힌 품명 (계란 특란 30구). RECEIPT면 필수. 발주 문구 · 같은 재료 판별용']
+  quantity numeric [not null, note: '입고량 (재료 단위). 영수증의 포장량 × 수량을 개 또는 g으로 환산한 값. 재고 설정 줄만 0 허용']
   unit_price numeric [note: '재료 단위 1개(1개 또는 1g)당 원. 영수증 줄 금액 ÷ 입고량']
 
-  Note: '영수증 1장 = 같은 supplier_id · purchased_on 묶음. 재료의 현재 단가 · 거래처는 purchased_on이 가장 늦은 줄. 남은 재고의 입고는 이 테이블만 계산'
+  Note: '입고 장부. 영수증 1장 = 같은 supplier_id · purchased_on 묶음. 재료의 현재 단가 · 거래처는 RECEIPT 줄 중 purchased_on이 가장 늦은 줄. 남은 재고의 입고는 이 테이블만 계산'
 }
 
 Table forecast {

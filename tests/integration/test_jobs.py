@@ -440,7 +440,7 @@ async def test_events_feed_forecast_order_plan_and_home(api, deps, runner):
     assert first["comparison"] == {"direction": "MORE", "diff": 10}
     assert [banner["type"] for banner in home["banners"]] == ["FIRST_FORECAST"]
     plan = (await api.call("getOrderPlan", 200, storeId=store_id, targetDate="2026-11-11")).json()
-    assert plan["events"] == [event] and plan["suppliers"] == []
+    assert plan["events"] == [event] and [group["supplier"] for group in plan["suppliers"]] == [None]
 
     deps.clock.fixed = kst("2026-11-11T07:40:00")
     await helpers.enqueue_context(deps, store_id, WED, "MORNING")

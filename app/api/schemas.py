@@ -112,3 +112,15 @@ class PurchaseOrderSupplierIn(BaseModel):
 class PurchaseOrderCreateIn(BaseModel):
     targetDate: IsoDate
     suppliers: list[PurchaseOrderSupplierIn]
+
+
+class IngredientCreateIn(BaseModel):
+    name: StrictStr
+    unit: Literal["개", "g"]
+
+
+class ManualPurchaseIn(BaseModel):
+    ingredientId: StrictStr
+    purchasedOn: IsoDate | None = None
+    quantity: Qty
+    isStockReset: StrictBool = False

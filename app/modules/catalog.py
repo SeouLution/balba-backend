@@ -11,7 +11,15 @@ from app.infrastructure.db.uow import UoW
 from app.infrastructure.jobs import queue
 from app.infrastructure.providers.ports import ProviderInvalidPayload, RecipeDraft
 from app.modules import stores
-from app.shared.types import INGREDIENT_UNITS, InternalFailure, InvalidRequest, NotFound, new_id, normalize_name
+from app.shared.types import (
+    INGREDIENT_UNITS,
+    Conflict,
+    InternalFailure,
+    InvalidRequest,
+    NotFound,
+    new_id,
+    normalize_name,
+)
 
 logger = logging.getLogger(__name__)
 RECIPE_BATCH_SIZE = 20
@@ -185,6 +193,26 @@ async def list_recipes(deps: Container, store_id: str) -> RecipeList:
         if store.generation_status != "READY":
             return RecipeList("GENERATING", None)
         return RecipeList("READY", await snapshot(uow, store_id))
+
+
+async def create_ingredient(deps: Container, store_id: str, name: str, unit: str) -> IngredientSnapshot:
+    name = normalize_name(name)
+    if not 1 <= len(name) <= 40:
+        raise InvalidRequest("name must be 1-40 characters")
+    if unit not in INGREDIENT_UNITS:
+        raise InvalidRequest("unit must be 개 or g")
+    async with deps.db.write() as uow:
+        await stores.lock(uow, store_id)
+        exists = (
+            await uow.execute(
+                select(ingredient.c.id).where(ingredient.c.store_id == store_id, ingredient.c.name == name)
+            )
+        ).first()
+        if exists is not None:
+            raise Conflict("ingredient name already exists")
+        created = IngredientSnapshot(new_id("ing"), store_id, name, unit)
+        await uow.execute(insert(ingredient).values(id=created.id, store_id=store_id, name=name, unit=unit))
+        return created
 
 
 async def save_recipes(deps: Container, store_id: str, replacements: list[RecipeReplacement]) -> None:

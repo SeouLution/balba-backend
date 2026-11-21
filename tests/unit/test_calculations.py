@@ -223,11 +223,30 @@ def test_f02_stock_is_receipts_minus_recorded_sales_only():
     assert inventory.evaluate(EGG_RECIPE, recorded_sales(), [], tuesday)["egg"].stock is None
 
 
-def test_f02_usage_above_stock_floors_at_zero_and_old_stock_stays():
+def test_f02_usage_above_stock_goes_negative_with_warning():
     heavy = sales.SalesSnapshot((("m1", date(2026, 11, 8), Decimal(100)),), ((date(2026, 11, 8), date(2026, 11, 9)),))
-    assert stock_on(date(2026, 11, 9), sold=heavy) == 0
-    refilled = [lot(), lot(line_id=2, day=date(2026, 11, 9), quantity=30)]
-    assert stock_on(date(2026, 11, 9), sold=heavy, lots=refilled) == 30
+    result = inventory.evaluate(EGG_RECIPE, heavy, [lot()], date(2026, 11, 9))["egg"]
+    assert (result.stock, result.missing_purchase, result.stock_for_planning) == (-40, True, 0)
+
+
+def test_f02_sales_before_first_purchase_are_ignored():
+    early = recorded_sales(("m1", date(2026, 11, 7), Decimal(30)))
+    assert stock_on(date(2026, 11, 9), sold=early) == 15
+    assert inventory.evaluate(EGG_RECIPE, early, [lot()], date(2026, 11, 9))["egg"].started_on == date(2026, 11, 8)
+
+
+def test_f02_second_purchase_adds_from_its_date():
+    tuesday = date(2026, 11, 10)
+    sold = recorded_sales(("m1", tuesday, Decimal(10)))
+    two_lots = [lot(), lot(line_id=2, day=tuesday, quantity=30)]
+    assert stock_on(date(2026, 11, 9), sold=sold, lots=two_lots) == 15
+    assert stock_on(tuesday, sold=sold, lots=two_lots) == 35
+
+
+def test_f02_stock_reset_ignores_earlier_ledger():
+    reset = receipts.ReceiptLot(2, "egg", None, date(2026, 11, 9), Decimal(50), None, None, "MANUAL", True)
+    result = inventory.evaluate(EGG_RECIPE, recorded_sales(), [lot(), reset], date(2026, 11, 9))["egg"]
+    assert (result.stock, result.started_on) == (25, date(2026, 11, 9))
 
 
 def forecast_row(planned: int, baseline=60, event_diff=0, adjusted=None) -> forecasting.ForecastSnapshot:
@@ -268,6 +287,9 @@ def test_supplier_must_order_today_with_known_days():
     assert plan([forecast_row(75)], 0, supplier(status="UNKNOWN")).lines == ()
     assert plan([forecast_row(75)], 0, supplier(order_days=(), status="CONFIRMED")).lines == ()
     assert len(plan([forecast_row(75)], 0, supplier(status="ESTIMATED")).lines) == 1
+    stock = {"egg": inventory.InventorySnapshot("egg", WED, None)}
+    [unknown] = ordering.plan(EGG_RECIPE, [forecast_row(75)], stock, {}, {}, (), "WED", WED).lines
+    assert (unknown.supplier, unknown.quantity, unknown.price) == (None, 75, None)
 
 
 def test_money_total_adds_only_known_prices():
