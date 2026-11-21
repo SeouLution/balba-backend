@@ -32,7 +32,7 @@ views / `GetHome.execute(StoreContext) → HomeResponse`. ForecastReader, Contex
 4. `forecast.items`는 예측이 있는 메뉴 중 상위 3개(C02), `totalMenuCount`는 전체 메뉴 수. 예측이 없으면 `items=[]`. `planned`는 adjusted 우선이고 0도 그대로 준다. `produced`와 `previousRecommended`는 TODAY에서만 값을 주고 TOMORROW에서는 null이다.
 5. `order`: TOMORROW에서 `PlanOrder(targetDate)` 결과에 줄이 있으면 `{supplierCount: 거래처 수, estimatedTotal: C05 금액 규칙}`, 줄이 없으면 null. TODAY에서는 `order` 키를 생략한다.
 6. `banners`: [C07](../domain/calculations.md) 조건에 맞는 것만 FIRST_FORECAST, OVERNIGHT_CHANGE, EVENT_TODAY, DELIVERY_EXPECTED 순으로 넣는다.
-7. 필수 필드 storeName/view/targetDate/tiles/banners/forecast를 항상 포함해 200.
+7. `businessHours`에 가게의 월~일 영업시간을 담아 `storeName`, `view`, `targetDate`, `tiles`, `banners`, `forecast`와 함께 반환한다. 휴무일에는 `day`와 `closed`만 포함한다.
 
 ## 실패·읽기 일관성
 

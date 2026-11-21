@@ -174,6 +174,7 @@ def home(view: views.HomeView, policy: Policy) -> dict:
         }
     body = {
         "storeName": view.store_name,
+        "businessHours": [_day_hours(hours) for hours in view.business_hours],
         "view": view.view,
         "targetDate": view.target_date.isoformat(),
         "tiles": tiles,
