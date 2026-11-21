@@ -340,7 +340,19 @@ def test_templates():
 
 def test_policy_lookups():
     used = ("축제-문화/예술", "축제-기타", "콘서트")
-    unused = ("클래식", "연극", "뮤지컬/오페라", "무용", "국악", "독주/독창회", "교육/체험", "전시/미술", "영화", "기타", None)
+    unused = (
+        "클래식",
+        "연극",
+        "뮤지컬/오페라",
+        "무용",
+        "국악",
+        "독주/독창회",
+        "교육/체험",
+        "전시/미술",
+        "영화",
+        "기타",
+        None,
+    )
     assert all(POLICY.uses_event_category(name) for name in used)
     assert not any(POLICY.uses_event_category(name) for name in unused)
 
