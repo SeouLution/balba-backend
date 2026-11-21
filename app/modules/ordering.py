@@ -84,6 +84,7 @@ def plan(
     forecasts: list[forecasting.ForecastSnapshot],
     stock_by_ingredient: dict[str, inventory.InventorySnapshot],
     latest_purchase: dict[str, receipts.LatestPurchaseFact],
+    price_by_ingredient: dict[str, Decimal | None],
     supplier_by_id: dict[str, suppliers.SupplierSnapshot],
     events: tuple[forecasting.NearbyEvent, ...],
     order_day: str,
@@ -116,7 +117,7 @@ def plan(
     lines, usual_lines = [], []
     for item in orderable:
         fact = latest_purchase.get(item.id)
-        price = fact.unit_price if fact else None
+        price = price_by_ingredient.get(item.id)
         quantity = shortage(planned, item)
         usual_lines.append((Decimal(shortage(usual, item)), price))
         if quantity == 0:
@@ -156,6 +157,7 @@ async def plan_order(uow: UoW, deps: Container, ctx: StoreContext, target_date: 
         await forecasting.read(uow, store.id, target_date),
         await inventory.end_of(uow, store, ctx.local_date),
         await receipts.latest(uow, store.id),
+        await receipts.latest_prices(uow, store.id),
         {item.id: item for item in await suppliers.list_all(uow, store.id)},
         factor_events,
         day_code(ctx.local_date),
@@ -250,6 +252,7 @@ async def create_purchase_orders(
         if target_hours.closed:
             raise InvalidRequest("target date is a closed day")
         latest_purchase = await receipts.latest(uow, store_id)
+        price_by_ingredient = await receipts.latest_prices(uow, store_id)
         order_day = day_code(ctx.local_date)
 
         created_ids = []
@@ -280,7 +283,9 @@ async def create_purchase_orders(
                         target_hours.open.hour,
                         [(fact.product_name, quantity, item.unit) for item, fact, quantity in kept],
                     ),
-                    total_amount=money_total([(quantity, fact.unit_price) for _, fact, quantity in kept]),
+                    total_amount=money_total(
+                        [(quantity, price_by_ingredient.get(item.id)) for item, _, quantity in kept]
+                    ),
                     created_at=ctx.now,
                 )
             )

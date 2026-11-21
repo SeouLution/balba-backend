@@ -37,7 +37,6 @@ class LatestPurchaseFact:
     ingredient_id: str
     supplier_id: str
     product_name: str
-    unit_price: Decimal | None
     purchased_on: date
     receipt_line_id: int
 
@@ -79,15 +78,24 @@ async def lots(uow: UoW, store_id: str, through: date | None = None) -> list[Rec
 
 
 async def latest(uow: UoW, store_id: str) -> dict[str, LatestPurchaseFact]:
-    """재료별로 가장 최근 줄 하나에서 거래처·품명·단가를 함께 가져온다. 더 오래된 줄의 단가를 끌어오지 않는다."""
+    """재료별로 가장 최근 영수증 줄 하나에서 거래처·품명을 가져온다."""
     facts: dict[str, LatestPurchaseFact] = {}
     for lot in await lots(uow, store_id):
         if lot.source != "RECEIPT":
             continue
         facts[lot.ingredient_id] = LatestPurchaseFact(
-            lot.ingredient_id, lot.supplier_id, lot.product_name, lot.unit_price, lot.purchased_on, lot.receipt_line_id
+            lot.ingredient_id, lot.supplier_id, lot.product_name, lot.purchased_on, lot.receipt_line_id
         )
     return facts
+
+
+async def latest_prices(uow: UoW, store_id: str) -> dict[str, Decimal | None]:
+    """최근 영수증 줄과 단가가 있는 수기 줄 중 최신 줄의 단가를 가져온다."""
+    prices: dict[str, Decimal | None] = {}
+    for lot in await lots(uow, store_id):
+        if lot.source == "RECEIPT" or lot.unit_price is not None:
+            prices[lot.ingredient_id] = lot.unit_price
+    return prices
 
 
 async def record_manual_purchase(
@@ -97,6 +105,7 @@ async def record_manual_purchase(
     purchased_on: date | None,
     quantity: Decimal,
     is_stock_reset: bool,
+    unit_price: Decimal | None,
 ) -> tuple[ReceiptLot, catalog.IngredientSnapshot]:
     ctx = deps.clock.context(store_id)
     purchased_on = purchased_on or ctx.local_date
@@ -121,12 +130,14 @@ async def record_manual_purchase(
                     ingredient_id=ingredient_id,
                     product_name=None,
                     quantity=quantity,
-                    unit_price=None,
+                    unit_price=unit_price,
                 )
                 .returning(receipt_line.c.id)
             )
         ).scalar_one()
-        lot = ReceiptLot(line_id, ingredient_id, None, purchased_on, quantity, None, None, "MANUAL", is_stock_reset)
+        lot = ReceiptLot(
+            line_id, ingredient_id, None, purchased_on, quantity, unit_price, None, "MANUAL", is_stock_reset
+        )
         return lot, target
 
 

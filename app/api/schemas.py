@@ -5,7 +5,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, BeforeValidator, StrictBool, StrictStr, StringConstraints
+from pydantic import BaseModel, BeforeValidator, Field, StrictBool, StrictStr, StringConstraints, field_validator
 
 from app.shared.types import to_qty
 
@@ -124,3 +124,11 @@ class ManualPurchaseIn(BaseModel):
     purchasedOn: IsoDate | None = None
     quantity: Qty
     isStockReset: StrictBool = False
+    unitPrice: Annotated[Decimal, Field(ge=0, max_digits=18, decimal_places=6)] | None = None
+
+    @field_validator("unitPrice", mode="before")
+    @classmethod
+    def _unit_price_number(cls, value):
+        if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float, Decimal))):
+            raise ValueError("unitPrice must be a number")
+        return value

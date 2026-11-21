@@ -238,7 +238,7 @@ async def create_ingredient(storeId: str, body: dto.IngredientCreateIn, deps: De
 @router.post("/stores/{storeId}/purchases", operation_id="createPurchase", dependencies=[OwnsStore])
 async def create_purchase(storeId: str, body: dto.ManualPurchaseIn, deps: Deps):
     lot, item = await receipts.record_manual_purchase(
-        deps, storeId, body.ingredientId, body.purchasedOn, body.quantity, body.isStockReset
+        deps, storeId, body.ingredientId, body.purchasedOn, body.quantity, body.isStockReset, body.unitPrice
     )
     return _json(presenters.manual_purchase(lot, item), 201)
 

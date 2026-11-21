@@ -103,9 +103,9 @@ Table receipt_line {
   ingredient_id text [not null, ref: > ingredient.id]
   product_name text [note: '영수증에 적힌 품명 (계란 특란 30구). RECEIPT면 필수. 발주 문구 · 같은 재료 판별용']
   quantity numeric [not null, note: '입고량 (재료 단위). 영수증의 포장량 × 수량을 개 또는 g으로 환산한 값. 재고 설정 줄만 0 허용']
-  unit_price numeric [note: '재료 단위 1개(1개 또는 1g)당 원. 영수증 줄 금액 ÷ 입고량']
+  unit_price numeric [note: '재료 단위 1개(1개 또는 1g)당 원. RECEIPT는 영수증 줄 금액 ÷ 입고량, MANUAL은 사장님이 넣은 값(없으면 null)']
 
-  Note: '입고 장부. 영수증 1장 = 같은 supplier_id · purchased_on 묶음. 재료의 현재 단가 · 거래처는 RECEIPT 줄 중 purchased_on이 가장 늦은 줄. 남은 재고의 입고는 이 테이블만 계산'
+  Note: '입고 장부. 영수증 1장 = 같은 supplier_id · purchased_on 묶음. 재료의 현재 거래처는 RECEIPT 줄 중 purchased_on이 가장 늦은 줄, 현재 단가는 RECEIPT 줄과 단가 있는 MANUAL 줄 중 가장 늦은 줄. 남은 재고의 입고는 이 테이블만 계산'
 }
 
 Table forecast {

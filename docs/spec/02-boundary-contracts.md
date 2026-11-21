@@ -70,7 +70,8 @@
 | catalog / CatalogWriter | `resolveReceiptIngredients(UoW, StoreId, List<IngredientResolution>) → List<IngredientSnapshot>` | 영수증 확정에서만 호출 |
 | sales / SalesReader | `read(StoreId, from, through) → SalesSnapshot` | 기간 안의 0과 기간 밖을 구분 |
 | receipts / ReceiptReader | `lots(StoreId, through) → List<ReceiptLot>` | 확정된 줄만, 날짜·id 순 |
-| receipts / PriceReader | `latest(StoreId, List<IngredientId>) → Map<IngredientId, LatestPurchaseFact?>` | 가장 최근 줄 하나에서 단가·거래처·품명을 함께 |
+| receipts / ReceiptReader | `latest(StoreId) → Map<IngredientId, LatestPurchaseFact>` | 최신 영수증 줄의 거래처와 품명 |
+| receipts / PriceReader | `latest_prices(StoreId) → Map<IngredientId, Decimal?>` | 영수증 줄과 단가가 있는 수기 줄 중 최신 줄의 단가(C03) |
 | suppliers / SupplierReader | `list(StoreId) → List<SupplierSnapshot>` | id 순 |
 | suppliers / SupplierWriter | `resolve(UoW, StoreId, List<SupplierDraft>) → List<SupplierSnapshot>` | 이름으로 upsert, 확인된 전화·요일 보호 |
 | suppliers / SupplierWriter | `confirmPhone(UoW, SupplierId, phone) → void` | recordSent가 호출 |

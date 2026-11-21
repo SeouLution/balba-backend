@@ -260,10 +260,18 @@ def supplier(order_days=("TUE",), status="CONFIRMED") -> suppliers.SupplierSnaps
 
 
 def plan(forecasts, remaining, target_supplier=None, order_day="TUE", price=EGG_PRICE):
-    fact = receipts.LatestPurchaseFact("egg", "s1", "계란 특란 30구", price, date(2026, 11, 8), 1)
+    fact = receipts.LatestPurchaseFact("egg", "s1", "계란 특란 30구", date(2026, 11, 8), 1)
     stock = inventory.InventorySnapshot("egg", date(2026, 11, 10), None if remaining is None else Decimal(remaining))
     return ordering.plan(
-        EGG_RECIPE, forecasts, {"egg": stock}, {"egg": fact}, {"s1": target_supplier or supplier()}, (), order_day, WED
+        EGG_RECIPE,
+        forecasts,
+        {"egg": stock},
+        {"egg": fact},
+        {"egg": price},
+        {"s1": target_supplier or supplier()},
+        (),
+        order_day,
+        WED,
     )
 
 
@@ -288,7 +296,7 @@ def test_supplier_must_order_today_with_known_days():
     assert plan([forecast_row(75)], 0, supplier(order_days=(), status="CONFIRMED")).lines == ()
     assert len(plan([forecast_row(75)], 0, supplier(status="ESTIMATED")).lines) == 1
     stock = {"egg": inventory.InventorySnapshot("egg", WED, None)}
-    [unknown] = ordering.plan(EGG_RECIPE, [forecast_row(75)], stock, {}, {}, (), "WED", WED).lines
+    [unknown] = ordering.plan(EGG_RECIPE, [forecast_row(75)], stock, {}, {}, {}, (), "WED", WED).lines
     assert (unknown.supplier, unknown.quantity, unknown.price) == (None, 75, None)
 
 

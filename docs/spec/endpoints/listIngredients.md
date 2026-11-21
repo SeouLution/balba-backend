@@ -29,7 +29,7 @@ views / `ListIngredients.execute(StoreContext) → IngredientListView`. 재료(c
 1. store를 확인한다.
 2. 이 가게의 모든 재료를 쓰이는 메뉴 수 내림차순, ingredientId 순으로 돌려준다(D52).
 3. `unit`은 재료 단위(`개` 또는 `g`)이고 항상 있다(D47). 구매 단위와 환산 비율은 내보내지 않는다.
-4. 확정된 영수증 줄이 없는 재료는 `price=null`, `supplier=null`. 줄은 있는데 단가가 없으면 `price={unitPrice:null}`이고 supplier는 그 줄의 거래처다(C03). `unitPrice`는 재료 단위 1개당 원이며 소수일 수 있다(D49).
+4. 확정된 영수증 줄도 단가 있는 수기 줄도 없는 재료는 `price=null`이고, 영수증 줄이 없으면 `supplier=null`이다. 단가를 정하는 줄은 있는데 단가가 없으면 `price={unitPrice:null}`이다. supplier는 최근 영수증 줄의 거래처다(C03, D58). `unitPrice`는 재료 단위 1개당 원이며 소수일 수 있다(D49).
 5. 200 `{items}`. 남은 일수 필드는 스키마에 없으므로 넣지 않는다.
 
 ## 완료 조건

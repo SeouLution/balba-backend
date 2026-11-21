@@ -1,6 +1,7 @@
 """엔드포인트 문서의 완료 조건 중 인수 흐름이 다루지 않는 경계."""
 
 from datetime import date
+from decimal import Decimal
 
 import pytest
 
@@ -216,6 +217,25 @@ async def test_save_recipes_replaces_whole_recipe_of_listed_menus(api, deps, run
     await api.call("saveRecipes", 422, storeId=store_id, json=body("떡볶이", [("어묵", 1)]))
     generating = (await api.call("listRecipes", 200, storeId=store_id)).json()
     assert generating == {"generationStatus": "GENERATING", "items": []}
+
+
+async def test_manual_purchase_unit_price(api, deps):
+    store_id = await new_store(api)
+    ingredient = await api.call("createIngredient", 201, storeId=store_id, json={"name": "단무지", "unit": "g"})
+    body = {"ingredientId": ingredient.json()["id"], "quantity": 3000}
+
+    for price in (-1, True, "2.5", 0.0000001, 10**12, 1e100):
+        await api.call("createPurchase", 422, storeId=store_id, json={**body, "unitPrice": price})
+
+    for fields, expected in (({"unitPrice": 2.500001}, 2.500001), ({}, None), ({"unitPrice": None}, None)):
+        purchase = await api.call("createPurchase", 201, storeId=store_id, json={**body, **fields})
+        assert purchase.json()["unitPrice"] == expected
+
+    ingredients = await api.call("listIngredients", 200, storeId=store_id)
+    assert ingredients.json()["items"][0]["price"] == {"unitPrice": 2.500001}
+    assert ingredients.json()["items"][0]["supplier"] is None
+    rows = await helpers.fetch_all(deps, "SELECT unit_price FROM receipt_line ORDER BY id")
+    assert [row.unit_price for row in rows] == [Decimal("2.500001"), None, None]
 
 
 # ───────── 준비량 · 발주 ─────────

@@ -47,7 +47,8 @@ class ForecastAdjustment:
 @dataclass(frozen=True)
 class IngredientRow:
     ingredient: catalog.IngredientSnapshot
-    latest_purchase: receipts.LatestPurchaseFact | None
+    has_price_line: bool
+    unit_price: Decimal | None
     supplier: suppliers.SupplierSnapshot | None
 
 
@@ -195,11 +196,13 @@ async def list_ingredients(deps: Container, store_id: str) -> IngredientListView
         await stores.require(uow, store_id)
         catalog_snapshot = await catalog.snapshot(uow, store_id)
         latest_purchase = await receipts.latest(uow, store_id)
+        price_by_ingredient = await receipts.latest_prices(uow, store_id)
         supplier_by_id = {item.id: item for item in await suppliers.list_all(uow, store_id)}
         rows = [
             IngredientRow(
                 ingredient=item,
-                latest_purchase=latest_purchase.get(item.id),
+                has_price_line=item.id in price_by_ingredient,
+                unit_price=price_by_ingredient.get(item.id),
                 supplier=supplier_by_id[latest_purchase[item.id].supplier_id] if item.id in latest_purchase else None,
             )
             for item in catalog_snapshot.ingredients_by_usage()

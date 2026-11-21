@@ -90,7 +90,7 @@ comparison은 사용자가 고친 값(adjusted)이 아니라 recommended 기준�
 
 ## C03 단가와 현재 거래처
 
-재료의 확정 receipt_line 중 `(purchased_on DESC, id DESC)` 첫 줄 하나에서 거래처·품명·단가를 함께 쓴다. 단가는 재료 단위 1개(1개 또는 1g)당 원이고 `영수증 줄 금액 ÷ 입고량`이다(소수 6자리). 그 줄의 단가가 null이면 더 오래된 줄의 단가를 끌어오지 않는다. 최근 거래처가 오늘 주문 요일이 아니라고 예전 거래처로 바꾸지 않는다.
+거래처·품명은 재료의 확정 영수증 줄(`source=RECEIPT`) 중 `(purchased_on DESC, id DESC)` 첫 줄에서 쓴다. 단가는 영수증 줄과 단가가 있는 수기 줄 중 같은 순서의 첫 줄에서 쓴다(D58). 단가는 재료 단위 1개(1개 또는 1g)당 원이고 영수증은 `줄 금액 ÷ 입고량`, 수기 입고는 사장님이 넣은 값이다(소수 6자리). 그 줄의 단가가 null이면 더 오래된 줄의 단가를 끌어오지 않는다. 최근 거래처가 오늘 주문 요일이 아니라고 예전 거래처로 바꾸지 않는다.
 
 ## C04 재고 추정
 
@@ -121,7 +121,7 @@ stock     = Σ 장부.quantity − usage
 2. 재고는 `asOf = 오늘`(요청 시각의 KST 날짜)로 계산하고 음수면 0으로 본다(C04, D56).
 3. `shortage = max(0, need − stock)`.
 4. `quantity = ceil(shortage)`. 0이면 줄을 뺀다. 포장 단위로 맞춰 올리지 않는다. 사장님이 2.8에서 +/−로 고친 수량이 발주서에 들어간다.
-5. 최근 거래처(C03)가 있는 재료는 요청 시각의 요일이 주문 요일이고 `orderDaysStatus`가 ESTIMATED 또는 CONFIRMED인 거래처일 때만 넣는다. UNKNOWN이거나 요일이 비었으면 뺀다. 영수증 입고가 없어 거래처를 모르는 재료는 `supplier=null`인 '거래처 미정' 묶음에 넣는다(D56). 이 줄은 단가가 null이고 발주서를 만들 수 없다.
+5. 최근 거래처(C03)가 있는 재료는 요청 시각의 요일이 주문 요일이고 `orderDaysStatus`가 ESTIMATED 또는 CONFIRMED인 거래처일 때만 넣는다. UNKNOWN이거나 요일이 비었으면 뺀다. 영수증 입고가 없어 거래처를 모르는 재료는 `supplier=null`인 '거래처 미정' 묶음에 넣는다(D56). 이 줄의 단가는 C03을 따르고(단가 있는 수기 입고가 없으면 null) 발주서를 만들 수 없다.
 6. 각 줄은 quantity, stock, eventDiff를 같은 재료 단위로 가진다. `price.unitPrice`는 null일 수 있다.
 
 **eventDiff**: 같은 조건에서 `eventFactor=1`로 준비량을 다시 계산해 만든 계획의 quantity와의 차이다. 사용자가 고친 메뉴(adjusted)는 행사 유무와 무관하게 같은 값을 쓰므로 그 메뉴의 증분은 0이다. `OrderPlan.events`에는 eventFactor가 1이 아닐 때 그 근거가 된 행사를 넣고, 아니면 빈 배열이다.

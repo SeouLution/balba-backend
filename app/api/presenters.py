@@ -226,7 +226,7 @@ def ingredient_list(view: views.IngredientListView) -> dict:
     for row in view.items:
         item = row.ingredient
         body: dict = {"id": item.id, "name": item.name, "unit": item.unit}
-        body["price"] = {"unitPrice": num(row.latest_purchase.unit_price)} if row.latest_purchase else None
+        body["price"] = {"unitPrice": num(row.unit_price)} if row.has_price_line else None
         body["supplier"] = _ref(row.supplier) if row.supplier else None
         items.append(body)
     return {"items": items}
@@ -242,6 +242,7 @@ def manual_purchase(lot: receipts.ReceiptLot, item: catalog.IngredientSnapshot) 
         "ingredient": _ref(item),
         "purchasedOn": lot.purchased_on.isoformat(),
         "quantity": {"value": num(lot.quantity), "unit": item.unit},
+        "unitPrice": num(lot.unit_price),
         "source": lot.source,
         "isStockReset": lot.is_stock_reset,
     }

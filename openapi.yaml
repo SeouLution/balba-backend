@@ -520,7 +520,7 @@ paths:
       tags: [3.0 재료 · 영수증]
       operationId: createPurchase
       summary: "영수증 없는 재료 수기 입고"
-      description: "영수증 입고와 같은 장부에 source=MANUAL로 저장합니다. 수량은 재료 단위(개 또는 g)입니다. isStockReset=true면 이 수량을 그날의 재고로 보고 그 이전 장부를 무시합니다(0 허용). 수기 입고는 재고에만 반영되고 최근 거래처·단가에는 쓰지 않습니다."
+      description: "영수증 입고와 같은 장부에 source=MANUAL로 저장합니다. 수량은 재료 단위(개 또는 g)입니다. isStockReset=true면 이 수량을 그날의 재고로 보고 그 이전 장부를 무시합니다(0 허용). unitPrice가 있는 수기 입고는 최근 단가 계산에 포함합니다. 거래처와 주문 요일은 영수증 입고를 기준으로 추정합니다."
       requestBody:
         required: true
         content:
@@ -972,14 +972,16 @@ components:
         purchasedOn: { type: string, format: date, description: "입고일. 생략하면 오늘. 미래 날짜는 422" }
         quantity: { type: number, minimum: 0, description: "재료 단위 수량. isStockReset=false면 0보다 커야 합니다", examples: [3000] }
         isStockReset: { type: boolean, default: false, description: "현재 재고로 설정" }
+        unitPrice: { type: [number, "null"], minimum: 0, exclusiveMaximum: 1000000000000, description: "1개 또는 1g당 원. 소수점 이하 최대 6자리. 생략하거나 null이면 이 입고의 단가를 비웁니다", examples: [296.666667] }
     ManualPurchase:
       type: object
-      required: [id, ingredient, purchasedOn, quantity, source, isStockReset]
+      required: [id, ingredient, purchasedOn, quantity, unitPrice, source, isStockReset]
       properties:
         id: { type: integer }
         ingredient: { $ref: "#/components/schemas/IngredientRef" }
         purchasedOn: { type: string, format: date }
         quantity: { $ref: "#/components/schemas/Quantity" }
+        unitPrice: { type: [number, "null"], minimum: 0, description: "저장한 1개 또는 1g당 단가(원)" }
         source: { type: string, enum: [RECEIPT, MANUAL] }
         isStockReset: { type: boolean }
     StockItem:
