@@ -29,8 +29,9 @@ sales / `ConfirmSalesImport.execute(StoreId, ImportId) → Accepted`. 요청 본
 
 1. store를 잠그고 import가 이 가게 것인지 확인한다(아니면 404).
 2. RECEIVED/PARSING이면 422. PARSE/APPLY 작업이 DEAD면 500. APPLYING/COMPLETED면 아무것도 하지 않고 202 빈 body.
-3. NEEDS_CONFIRMATION이면 상태를 APPLYING으로 바꾸고 `apply:<importId>` 작업을 같은 트랜잭션에 등록한다.
-4. 202 빈 body.
+3. NEEDS_CONFIRMATION인데 recordCount가 0이면(찾지 못한 열이 남았거나 읽힌 행이 없음) 422. 클라이언트는 [updateColumnMapping](updateColumnMapping.md)으로 열을 고친 뒤 다시 confirm한다.
+4. NEEDS_CONFIRMATION이면 상태를 APPLYING으로 바꾸고 `apply:<importId>` 작업을 같은 트랜잭션에 등록한다.
+5. 202 빈 body.
 
 ## 반영(APPLY_SALES)의 의미
 

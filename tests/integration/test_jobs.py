@@ -131,20 +131,6 @@ async def test_unreadable_files_die_immediately(api, deps, runner):
     store_id = (await api.call("createStore", 201, json=helpers.store_body())).json()["id"]
     await runner.run_until_idle()
 
-    no_rows = "주문일자,상품명,수량,결제금액\n합계,,10,1000\n".encode()
-    first = (
-        await api.call("createSalesImport", 202, storeId=store_id, files={"file": ("a.csv", no_rows, "text/csv")})
-    ).json()["id"]
-    await runner.run_until_idle()
-    await api.call("getSalesImport", 500, storeId=store_id, importId=first)
-
-    wrong_columns = "날짜,메뉴,개수\n2026-11-01,김밥,1\n".encode()
-    second = (
-        await api.call("createSalesImport", 202, storeId=store_id, files={"file": ("b.csv", wrong_columns, "text/csv")})
-    ).json()["id"]
-    await runner.run_until_idle()
-    await api.call("getSalesImport", 500, storeId=store_id, importId=second)
-
     content = helpers.sales_csv(SALES, date(2026, 11, 1), date(2026, 11, 2))
     third = (
         await api.call("createSalesImport", 202, storeId=store_id, files={"file": ("c.csv", content, "text/csv")})
@@ -159,7 +145,7 @@ async def test_unreadable_files_die_immediately(api, deps, runner):
     jobs = await helpers.fetch_all(
         deps, "SELECT state, attempts FROM background_job WHERE kind = 'PARSE_SALES' ORDER BY created_at"
     )
-    assert [(job.state, job.attempts) for job in jobs] == [("DEAD", 1), ("DEAD", 3), ("DEAD", 1)]
+    assert [(job.state, job.attempts) for job in jobs] == [("DEAD", 1)]
 
 
 async def test_work_survives_a_restart_and_runs_once(api, deps, runner):

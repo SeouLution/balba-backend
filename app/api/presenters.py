@@ -46,7 +46,8 @@ def sales_import(view: sales.SalesImportView) -> dict:
         mapping = view.detection["columnMapping"]
         detection = {
             "menuCount": view.detection["menuCount"],
-            "columnMapping": {key: mapping[key] for key in ("date", "menuName", "quantity")},
+            "columns": view.detection.get("columns", []),
+            "columnMapping": {key: mapping[key] for key in sales.MAPPING_KEYS},
             "preview": view.detection["preview"],
         }
     return {

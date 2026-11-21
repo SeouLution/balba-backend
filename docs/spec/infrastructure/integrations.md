@@ -36,17 +36,17 @@ POS별 양식표를 두지 않는다. PARSE_SALES 작업이 아래 순서로 처
 
 1. 파일을 연다. xlsx는 스트리밍 reader, xls는 전용 reader, csv는 UTF-8(BOM 포함) → CP949 순으로 해독한다. 수식은 실행하지 않고 저장된 값만 읽는다.
 2. 첫 줄(열 이름)과 그 아래 20줄을 Claude API에 보내 아래 스키마로 답을 받는다. 파일 전체를 보내지 않는다.
-   - `date`, `menuName`, `quantity`: 해당하는 열 이름. 셋 다 필수.
+   - `date`, `menuName`, `quantity`: 해당하는 열 이름. 찾지 못한 열은 null.
    - `posSystem`: 열 구성으로 보아 `TOSS_POS | OKPOS | BAEMIN_POS` 중 하나가 분명하면 그 값, 아니면 `OTHER`.
-3. 받은 열 이름이 실제 첫 줄에 있는지 확인한다. 없는 이름이 오면 `InvalidPayload`다.
+3. 받은 열 이름이 실제 첫 줄에 있는지 확인한다. 없는 이름이 온 열은 null로 둔다.
 4. 전체 행을 코드로 읽는다.
    - 날짜: 날짜 셀 또는 `YYYY-MM-DD`, `YYYY/MM/DD`, `YYYY.MM.DD`, 시각이 붙은 값은 KST 날짜. 날짜로 읽히지 않는 행(합계·소계·빈 줄)은 건너뛴다.
    - 메뉴 이름: 앞뒤 공백 제거, NFC.
    - 수량: 숫자. 음수(환불)는 같은 메뉴·날짜 합계에서 뺀다. 합계가 음수면 0으로 둔다.
-5. `period`는 읽은 행의 최소~최대 날짜, `recordCount`는 읽은 행 수, `menuCount`는 서로 다른 메뉴 수, `preview`는 읽은 순서로 앞 5행이다.
-6. `sales_import.detection`에 열 매핑·menuCount·preview를 저장하고 NEEDS_CONFIRMATION으로 바꾼다. 금액 열은 읽지 않는다(D42).
+5. `period`는 읽은 행의 최소~최대 날짜, `recordCount`는 읽은 행 수, `menuCount`는 서로 다른 메뉴 수, `preview`는 읽은 순서로 앞 5행이다. 세 열 중 null이 있으면 행을 읽지 않고 preview `[]`, period null, recordCount 0이다.
+6. `sales_import.detection`에 첫 줄 열 이름 목록(`columns`)·열 매핑·menuCount·preview를 저장하고 NEEDS_CONFIRMATION으로 바꾼다. 금액 열은 읽지 않는다(D42).
 
-날짜·메뉴·수량 열 중 하나라도 찾지 못했거나 읽은 행이 0이면 작업은 바로 DEAD다.
+열을 찾지 못했거나 읽은 행이 0이어도 NEEDS_CONFIRMATION으로 넘긴다. 사장님이 [updateColumnMapping](../endpoints/updateColumnMapping.md)으로 열을 고르면 4~5번을 다시 실행한다. 파일을 읽을 수 없거나 첫 줄이 비어 있으면 작업은 바로 DEAD다.
 
 APPLY_SALES는 저장된 열 매핑으로 4번을 다시 실행해 반영한다.
 

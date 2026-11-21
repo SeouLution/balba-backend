@@ -83,9 +83,9 @@ def _json(response: httpx.Response) -> dict:
 
 
 class ColumnsOut(BaseModel):
-    date: str
-    menuName: str
-    quantity: str
+    date: str | None
+    menuName: str | None
+    quantity: str | None
     posSystem: Literal["TOSS_POS", "OKPOS", "BAEMIN_POS", "OTHER"]
 
 
@@ -210,7 +210,7 @@ class ClaudeAdapter:
         system = (
             "POS에서 내려받은 판매 파일의 첫 줄(열 이름)과 그 아래 몇 줄을 보고 열을 고른다. "
             "date는 판매 날짜, menuName은 상품(메뉴) 이름, quantity는 판매 수량 열의 이름이다. "
-            "열 이름은 주어진 첫 줄에 있는 글자 그대로 답한다. "
+            "열 이름은 주어진 첫 줄에 있는 글자 그대로 답하고, 해당하는 열을 찾을 수 없으면 null로 답한다. "
             "posSystem은 열 구성으로 보아 TOSS_POS, OKPOS, BAEMIN_POS 중 하나가 분명할 때만 그 값이고 아니면 OTHER다."
         )
         table = json.dumps({"header": header, "rows": sample_rows}, ensure_ascii=False)

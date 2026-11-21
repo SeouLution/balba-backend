@@ -2,6 +2,7 @@
 
 from datetime import date
 
+from app.infrastructure.providers.ports import ColumnDetection
 from tests import helpers
 from tests.conftest import kst
 
@@ -139,3 +140,33 @@ async def test_home_switches_view_at_20_and_midnight(api, deps, runner):
         home = (await api.call("getHome", 200, storeId=ids["storeId"])).json()
         assert (home["view"], home["targetDate"]) == (view, target_date)
         assert ("order" in home) == (view == "TOMORROW")
+
+
+async def test_unfound_column_is_fixed_before_confirm(api, deps, runner):
+    deps.providers.columns.detection = ColumnDetection("주문일자", "상품명", "판매량", "OTHER")
+    store_id = (await api.call("createStore", 201, json=helpers.store_body())).json()["id"]
+    content = helpers.sales_csv(SALES, date(2026, 11, 3), date(2026, 11, 9))
+    import_id = (
+        await api.call("createSalesImport", 202, storeId=store_id, files={"file": ("pos.csv", content, "text/csv")})
+    ).json()["id"]
+    await runner.run_until_idle()
+
+    parsed = (await api.call("getSalesImport", 200, storeId=store_id, importId=import_id)).json()
+    assert parsed["status"] == "NEEDS_CONFIRMATION"
+    assert parsed["detection"]["columns"] == ["주문일자", "상품명", "수량", "결제금액"]
+    assert parsed["detection"]["columnMapping"] == {"date": "주문일자", "menuName": "상품명", "quantity": None}
+    assert parsed["recordCount"] == 0
+    await api.call("confirmSalesImport", 422, storeId=store_id, importId=import_id)
+    mapping_kwargs = {"storeId": store_id, "importId": import_id}
+    await api.call("updateColumnMapping", 422, **mapping_kwargs, json={"quantity": "판매량"})
+
+    fixed = (await api.call("updateColumnMapping", 200, **mapping_kwargs, json={"quantity": "수량"})).json()
+    assert fixed["detection"]["columnMapping"]["quantity"] == "수량"
+    assert fixed["detection"]["preview"][0] == {"date": "2026-11-03", "menuName": "김밥", "quantity": 50}
+    assert fixed["period"] == {"from": "2026-11-03", "to": "2026-11-09"}
+    assert fixed["recordCount"] == 7 * 3
+
+    await api.call("confirmSalesImport", 202, storeId=store_id, importId=import_id)
+    await runner.run_until_idle()
+    assert (await helpers.fetch_all(deps, "SELECT sum(quantity) AS total FROM daily_sales"))[0].total == 7 * 80
+    await api.call("updateColumnMapping", 422, **mapping_kwargs, json={"quantity": "수량"})

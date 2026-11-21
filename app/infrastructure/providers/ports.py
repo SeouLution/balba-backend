@@ -16,9 +16,9 @@ class ProviderInvalidPayload(Exception):
 
 @dataclass(frozen=True)
 class ColumnDetection:
-    date: str
-    menu_name: str
-    quantity: str
+    date: str | None
+    menu_name: str | None
+    quantity: str | None
     pos_system: str
 
 

@@ -66,6 +66,12 @@ class RecipeBatchIn(BaseModel):
     items: list[RecipeMenuIn]
 
 
+class ColumnMappingIn(BaseModel):
+    date: StrictStr | None = None
+    menuName: StrictStr | None = None
+    quantity: StrictStr | None = None
+
+
 class QuantityIn(BaseModel):
     quantity: Qty
 
