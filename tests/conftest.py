@@ -86,6 +86,7 @@ class Api:
     def __init__(self, client: httpx.AsyncClient):
         self.client = client
         self.signups = 0
+        self.store_cookies: dict[str, dict] = {}
 
     async def new_account_cookie(self) -> dict:
         self.signups += 1
@@ -94,11 +95,18 @@ class Api:
         return {"cookie": f"access_token={signed_up.cookies['access_token']}"}
 
     async def call(self, operation_id: str, expect: int, **kwargs) -> httpx.Response:
-        if operation_id == "createStore" and "headers" not in kwargs:
+        new_owner = operation_id == "createStore" and "headers" not in kwargs
+        if new_owner:
             kwargs["headers"] = await self.new_account_cookie()
         method, path, _ = OPERATIONS[operation_id]
         path_params = {key: kwargs.pop(key) for key in list(kwargs) if "{" + key + "}" in path}
+        if "storeId" in path_params and "headers" not in kwargs:
+            kwargs["headers"] = self.store_cookies.get(path_params["storeId"], {})
         response = await self.client.request(method, path.format(**path_params), **kwargs)
+        if operation_id == "createStore" and response.status_code == 201:
+            self.store_cookies[response.json()["id"]] = kwargs["headers"]
+            if new_owner:
+                self.client.headers.update(kwargs["headers"])
         assert response.status_code == expect, f"{operation_id}: {response.status_code} {response.text}"
         schema = response_schema(operation_id, response.status_code)
         if schema is None:

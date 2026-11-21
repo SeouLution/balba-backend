@@ -61,12 +61,16 @@ async def test_wrong_credentials_and_bad_tokens_are_unauthorized(api):
 async def test_create_store_issues_store_id(api):
     signed_up = await api.call("signUp", 201, json=CREDENTIALS)
     user_id = signed_up.json()["userId"]
-    assert (await api.call("getUserStore", 200, userId=user_id)).json() == {"storeId": None}
+    await api.call("getUserStore", 401, userId=user_id)
+    owner = auth_header(signed_up)
+    assert (await api.call("getUserStore", 200, userId=user_id, headers=owner)).json() == {"storeId": None}
     created = await api.call("createStore", 201, json=helpers.store_body(), headers=auth_header(signed_up))
     store_id = created.json()["id"]
     assert (await api.call("logIn", 200, json=CREDENTIALS)).json()["storeId"] == store_id
-    assert (await api.call("getUserStore", 200, userId=user_id)).json() == {"storeId": store_id}
-    await api.call("getUserStore", 404, userId="usr_missing")
-    await api.call("getHome", 200, storeId=created.json()["id"])
+    assert (await api.call("getUserStore", 200, userId=user_id, headers=owner)).json() == {"storeId": store_id}
+    await api.call("getUserStore", 404, userId="usr_other", headers=owner)
+    await api.call("getHome", 200, storeId=store_id, headers=owner)
+    await api.call("getHome", 404, storeId=store_id, headers=await api.new_account_cookie())
+    await api.call("getHome", 401, storeId=store_id, headers={})
     await api.call("createStore", 409, json=helpers.store_body(), headers=auth_header(signed_up))
     await api.call("createStore", 401, json=helpers.store_body(), headers={})

@@ -53,8 +53,10 @@ def test_runtime_routes_match_openapi_one_to_one():
 
 
 @pytest.mark.parametrize("operation_id", sorted(op for op in OPERATIONS if "{storeId}" in OPERATIONS[op][1]))
-async def test_unknown_store_is_not_found(api, operation_id):
-    await api.call(operation_id, 404, **path_kwargs(operation_id), **MINIMAL_REQUESTS.get(operation_id, {}))
+async def test_store_routes_need_owner_cookie(api, operation_id):
+    request = {**path_kwargs(operation_id), **MINIMAL_REQUESTS.get(operation_id, {})}
+    await api.call(operation_id, 401, headers={}, **request)
+    await api.call(operation_id, 404, headers=await api.new_account_cookie(), **request)
 
 
 @pytest.mark.parametrize(

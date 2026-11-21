@@ -299,7 +299,7 @@ async def test_order_plan_and_purchase_order_rules(api, deps, runner):
         "recordSent", 404, storeId=other["storeId"], purchaseOrderId=listed[0]["id"], json={"channel": "COPY"}
     )
 
-    deps.clock.fixed = kst("2026-11-11T20:30:00")
+    deps.clock.fixed = kst("2026-11-11T20:15:00")
     wednesday = (await api.call("getOrderPlan", 200, storeId=store_id, targetDate="2026-11-12")).json()
     assert wednesday["suppliers"] == []
     await api.call("createPurchaseOrders", 422, storeId=store_id, json=order(target_date="2026-11-12", 대한식자재=egg))
