@@ -1,6 +1,6 @@
 # 엔드포인트 구현 인덱스
 
-OpenAPI의 가게 API 21개 operation과 1:1 대응한다(계정 4개 제외). 각 파일은 공개 계약, 모듈 경계, 처리 순서, 원자성/실패, 완료 조건을 정의한다. `/health`, `/openapi.yaml`, `/scalar`는 별도의 [기반 유지 조건](../infrastructure/runtime.md)이다.
+OpenAPI의 가게 API 24개 operation과 1:1 대응한다(계정 4개 제외). 각 파일은 공개 계약, 모듈 경계, 처리 순서, 원자성/실패, 완료 조건을 정의한다. `/health`, `/openapi.yaml`, `/scalar`는 별도의 [기반 유지 조건](../infrastructure/runtime.md)이다.
 
 | operationId / 상세 명세 | Method | 경로 | 화면 / 목적 |
 |---|---|---|---|
@@ -20,6 +20,9 @@ OpenAPI의 가게 API 21개 operation과 1:1 대응한다(계정 4개 제외). �
 | [createPurchaseOrders](createPurchaseOrders.md) | POST | `/stores/{storeId}/purchase-orders` | 2.8 '발주서 만들기' |
 | [recordSent](recordSent.md) | POST | `/stores/{storeId}/purchase-orders/{purchaseOrderId}/send-records` | 3.1 문자 · 카카오톡 · 복사 (보낸 방법 기록) |
 | [listIngredients](listIngredients.md) | GET | `/stores/{storeId}/ingredients` | 3.2 재료 탭 |
+| [createIngredient](createIngredient.md) | POST | `/stores/{storeId}/ingredients` | 재료 직접 등록 |
+| [createPurchase](createPurchase.md) | POST | `/stores/{storeId}/purchases` | 영수증 없는 재료 수기 입고 · 현재 재고로 설정 |
+| [getStock](getStock.md) | GET | `/stores/{storeId}/stock` | 재료별 추정 재고 |
 | [listSuppliers](listSuppliers.md) | GET | `/stores/{storeId}/suppliers` | 3.7 거래처 주문 요일 |
 | [saveOrderDays](saveOrderDays.md) | PUT | `/stores/{storeId}/suppliers/order-days` | 3.7 '저장' |
 | [createReceiptScan](createReceiptScan.md) | POST | `/stores/{storeId}/receipt-scans` | 1.5 · 3.5 '다 찍었어요' (여러 장 한 번에) |

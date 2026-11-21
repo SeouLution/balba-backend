@@ -75,6 +75,43 @@ python -m app.infrastructure.jobs.schedule <storeId> 2026-11-11 NIGHT
 python -m app.infrastructure.jobs.schedule <storeId> 2026-11-11 MORNING
 ```
 
+## 재고·발주 API 예시
+
+모든 가게 API는 로그인 쿠키가 필요하다. 수량은 재료 단위(`개` 또는 `g`)다.
+
+```bash
+API=https://api.balba.duckdns.org/v1
+STORE=<storeId>
+curl -c cookie.txt -X POST $API/auth/login -H 'Content-Type: application/json' \
+  -d '{"phoneNumber":"01012345678","password":"5678"}'
+
+# 재료 등록 / 목록
+curl -b cookie.txt -X POST $API/stores/$STORE/ingredients -H 'Content-Type: application/json' \
+  -d '{"name":"단무지","unit":"g"}'
+curl -b cookie.txt $API/stores/$STORE/ingredients
+
+# 수기 입고 (purchasedOn 생략 시 오늘) / 현재 재고로 설정
+curl -b cookie.txt -X POST $API/stores/$STORE/purchases -H 'Content-Type: application/json' \
+  -d '{"ingredientId":"<ingredientId>","purchasedOn":"2026-11-21","quantity":3000}'
+curl -b cookie.txt -X POST $API/stores/$STORE/purchases -H 'Content-Type: application/json' \
+  -d '{"ingredientId":"<ingredientId>","quantity":1200,"isStockReset":true}'
+
+# 영수증 확정 (입고 장부에 source=RECEIPT로 저장)
+curl -b cookie.txt -X POST $API/stores/$STORE/receipt-scans/<scanId>/confirm -H 'Content-Type: application/json' \
+  -d '{"answers":[]}'
+
+# 재료별 추정 재고 (asOf 생략 시 오늘)
+curl -b cookie.txt "$API/stores/$STORE/stock?asOf=2026-11-21"
+
+# 발주 추천 (targetDate는 오늘 또는 내일)
+curl -b cookie.txt $API/stores/$STORE/order-plans/2026-11-22
+
+# 레시피 조회 / 저장 (메뉴별 전체 교체)
+curl -b cookie.txt $API/stores/$STORE/recipes
+curl -b cookie.txt -X PUT $API/stores/$STORE/recipes -H 'Content-Type: application/json' \
+  -d '{"items":[{"menuId":"<menuId>","items":[{"ingredientId":"<ingredientId>","quantity":30}]}]}'
+```
+
 ## 배포
 
 `main`에 푸시하면 GitHub Actions가 테스트 → ARM64 이미지 빌드(GHCR) → 서버 배포까지 자동으로 진행한다.
