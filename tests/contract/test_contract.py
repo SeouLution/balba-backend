@@ -52,11 +52,11 @@ def test_runtime_routes_match_openapi_one_to_one():
         for method, operation in item.items()
     }
     declared = {(method, "/v1" + path, operation_id) for operation_id, (method, path, _) in OPERATIONS.items()}
-    assert len(declared) == 25
+    assert len(declared) == 29
     assert runtime == declared
 
 
-@pytest.mark.parametrize("operation_id", sorted(set(OPERATIONS) - {"createStore"}))
+@pytest.mark.parametrize("operation_id", sorted(op for op in OPERATIONS if "{storeId}" in OPERATIONS[op][1]))
 async def test_unknown_store_is_not_found(api, operation_id):
     await api.call(operation_id, 404, **path_kwargs(operation_id), **MINIMAL_REQUESTS.get(operation_id, {}))
 

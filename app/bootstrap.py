@@ -19,6 +19,7 @@ REQUIRED_ENV = (
     "VAPID_PRIVATE_KEY",
     "VAPID_PUBLIC_KEY",
     "VAPID_SUBJECT",
+    "JWT_SECRET",
 )
 
 
@@ -31,6 +32,7 @@ class Container:
     policy: Policy
     files: FileStore
     providers: Providers
+    jwt_secret: str
     scheduler_enabled: bool = True
 
 
@@ -48,5 +50,6 @@ def container_from_env() -> Container:
         policy=load_policy(),
         files=FileStore(Path(env["FILE_STORAGE_ROOT"])),
         providers=real_providers(env),
+        jwt_secret=env["JWT_SECRET"],
         scheduler_enabled=not demo_now,
     )

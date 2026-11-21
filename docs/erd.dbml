@@ -203,3 +203,11 @@ Table background_job {
 
   Note: '엑셀 반영 · 영수증 읽기 · 예측 · 푸시 같은 비동기 작업. 서버가 재시작돼도 끝나지 않은 작업을 이어서 실행'
 }
+
+Table app_user {
+  id text [pk]
+  phone_number text [not null, unique, note: '로그인 아이디. 숫자만']
+  password_hash text [not null, note: 'scrypt. salt_hex$hash_hex']
+  store_id text [not null, unique, note: '가입 때 발급한 가게 id. store 행은 가게 정보 저장 때 생긴다']
+  created_at timestamptz [not null, default: `now()`]
+}

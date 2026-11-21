@@ -12,7 +12,8 @@ info:
     ## 공통 규칙
     - **성공 상태 코드**: 201 리소스를 만들고 돌려줌 · 202 비동기 접수(본문은 조회에 쓸 `id`뿐이거나 없음) · 200 그 외 본문 있음 · 204 본문 없음
     - **실패 응답**: 본문은 항상 `{ code }`이고, 문구는 프론트가 `code`로 정합니다.
-      `INVALID_REQUEST` 422 · `NOT_FOUND` 404 · `INTERNAL_ERROR` 500
+      `INVALID_REQUEST` 422 · `UNAUTHORIZED` 401 · `NOT_FOUND` 404 · `CONFLICT` 409 · `INTERNAL_ERROR` 500
+    - **인증**: 가입 · 로그인 성공 시 HttpOnly 쿠키 `access_token`(JWT, 1일)을 내려주고, `/users/me`는 이 쿠키로 사용자를 확인합니다.
     - **목록**: `{ items }`
     - **다른 리소스 참조**: 응답은 `{ id, name }` 객체(`menu` · `ingredient` · `supplier`), 요청은 `~Id`
     - **수량**: 메뉴 수량은 숫자 + 같은 객체의 `unit`, 재료 수량은 `{ value, unit }`
@@ -21,6 +22,7 @@ info:
 servers:
   - url: https://api.seoulution.example/v1
 tags:
+  - name: 0.0 계정
   - name: 1.0 시작하기
   - name: 엑셀 올리기
   - name: 2.0 홈
@@ -28,6 +30,65 @@ tags:
   - name: 3.0 재료 · 영수증
   - name: 4.0 할인
 paths:
+  # ───────────── 0.0 계정 ─────────────
+  /auth/signup:
+    post:
+      tags: [0.0 계정]
+      operationId: signUp
+      summary: "회원 가입"
+      description: "가입과 동시에 가게 id를 하나 발급하고 로그인 쿠키를 내려줍니다. 이미 가입된 번호면 `CONFLICT`(409)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "201":
+          description: "가입됨. `Set-Cookie: access_token`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        default: { $ref: "#/components/responses/Error" }
+  /auth/login:
+    post:
+      tags: [0.0 계정]
+      operationId: logIn
+      summary: "로그인"
+      description: "번호나 비밀번호가 틀리면 `UNAUTHORIZED`(401)."
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Credentials" }
+      responses:
+        "200":
+          description: "로그인됨. `Set-Cookie: access_token`"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        default: { $ref: "#/components/responses/Error" }
+  /auth/logout:
+    post:
+      tags: [0.0 계정]
+      operationId: logOut
+      summary: "로그아웃"
+      description: "로그인 쿠키를 지웁니다."
+      responses:
+        "204": { description: "로그아웃됨" }
+        default: { $ref: "#/components/responses/Error" }
+  /users/me:
+    get:
+      tags: [0.0 계정]
+      operationId: getMe
+      summary: "내 정보"
+      description: "쿠키가 없거나 만료 · 위조되었으면 `UNAUTHORIZED`(401)."
+      responses:
+        "200":
+          description: "로그인한 사용자"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Me" }
+        default: { $ref: "#/components/responses/Error" }
   # ───────────── 1.0 시작하기 ─────────────
   /stores:
     post:
@@ -593,12 +654,26 @@ components:
     # ───────── 공통 ─────────
     ErrorCode:
       type: string
-      enum: [INVALID_REQUEST, NOT_FOUND, INTERNAL_ERROR]
+      enum: [INVALID_REQUEST, UNAUTHORIZED, NOT_FOUND, CONFLICT, INTERNAL_ERROR]
     Error:
       type: object
       required: [code]
       properties:
         code: { $ref: "#/components/schemas/ErrorCode" }
+    # ───────── 계정 ─────────
+    Credentials:
+      type: object
+      required: [phoneNumber, password]
+      properties:
+        phoneNumber: { type: string, description: "아이디. 숫자만", pattern: "^01[0-9]{8,9}$", examples: ["01012345678"] }
+        password: { type: string, minLength: 8, maxLength: 128 }
+    Me:
+      type: object
+      required: [userId, storeId, phoneNumber]
+      properties:
+        userId: { type: string, examples: ["usr_3b9c0"] }
+        storeId: { type: string, examples: ["st_8f2k1"] }
+        phoneNumber: { type: string, examples: ["01012345678"] }
     LocalTime:
       type: string
       description: "HH:mm (24시간)"

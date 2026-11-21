@@ -31,6 +31,7 @@ uvicorn app.main:app --reload      # http://localhost:8000/health · API 는 /v1
 | `VAPID_PRIVATE_KEY` | 웹 푸시를 보낼 때 서명하는 개인키 | 필수 |
 | `VAPID_PUBLIC_KEY` | 위 개인키와 쌍인 공개키. 서버는 값이 있는지만 확인하고, 프론트가 푸시 구독할 때 쓴다 | 필수 |
 | `VAPID_SUBJECT` | 푸시 서비스에 알리는 운영자 연락처. `mailto:메일주소` 형식 | 필수 |
+| `JWT_SECRET` | 로그인 쿠키의 JWT 서명 키. 충분히 긴 임의 문자열(예: `openssl rand -hex 32`). 바꾸면 모든 로그인이 풀린다 | 필수 |
 | `CORS_ALLOWED_ORIGINS` | API 호출을 허용할 프론트 주소. 쉼표로 여러 개. 비우면 다른 주소의 브라우저 요청이 막힌다 | 선택 |
 | `GIT_SHA` | `/health`가 돌려주는 버전 값. 배포 스크립트가 배포된 커밋을 확인하는 데 쓴다. 로컬에서는 `dev` | 선택 |
 | `DEMO_NOW` | 서버의 현재 시각을 고정하는 값. 넣으면 정해진 시각의 자동 작업이 멈춘다. 시연용이며 운영에서는 비운다 | 선택 |
