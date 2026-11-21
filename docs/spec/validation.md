@@ -6,7 +6,7 @@
 
 | 계층 | 대상 | 방법 |
 |---|---|---|
-| 계약 | 가게 API 22개 method/path/operationId, 요청·응답 모양 | `openapi.yaml`을 직접 읽어 라우트와 대조하고, 실제 HTTP 응답을 그 스키마(JSON Schema 2020-12)로 검증 |
+| 계약 | 가게 API 20개 method/path/operationId, 요청·응답 모양 | `openapi.yaml`을 직접 읽어 라우트와 대조하고, 실제 HTTP 응답을 그 스키마(JSON Schema 2020-12)로 검증 |
 | 단위 | 예측·예측 모델·재고·발주·재고 부족 계산, 문장 템플릿 | 고정 Clock, Decimal, 정책 값 fixture. 외부 IO 없음 |
 | 통합 | PostgreSQL 제약/잠금/트랜잭션/작업 | 실제 PostgreSQL + 임시 파일 저장소 + fake 외부 포트 |
 | 인수 | 온보딩 → 홈 → 발주 → 영수증 → 재고 부족 안내 | FastAPI client와 실제 작업 handler, 고정 Clock |
@@ -18,7 +18,7 @@ if/then 조건, Decimal의 JSON number, nullable과 필드 생략, 204 빈 body�
 
 ## 공통 계약 매트릭스
 
-22개 operation 각각에 대해 정상 상태 코드와 body, 없는 store, 다른 store의 하위 ID, 구조 오류, 예상하지 못한 adapter 실패를 확인한다.
+20개 operation 각각에 대해 정상 상태 코드와 body, 없는 store, 다른 store의 하위 ID, 구조 오류, 예상하지 못한 adapter 실패를 확인한다.
 
 - 모든 오류 body가 `{code}` 한 키뿐이다. FastAPI detail, stack, 외부 서비스 문구가 없다.
 - 수량에 bool/NaN/Infinity/음수는 422. 소수 6자리 초과는 6자리로 반올림돼 저장된다(D26).
@@ -75,12 +75,12 @@ if/then 조건, Decimal의 JSON number, nullable과 필드 생략, 204 빈 body�
 
 ### F03 재고 부족 안내
 
-김밥 1인분당 계란 1개, 계란은 CORE. `policy.low_stock.days=2`.
+김밥 1인분당 계란 1개. `policy.low_stock.days=2`.
 
 - targetDate와 다음 날 준비량이 60인분씩이면 expectedUsage=120개다. 재고 100개면 부족이고 120개면 부족이 아니다.
-- 다음 날의 예측 행이 없으면 날씨·행사 계수를 1로 둔 예측값을 올림해 쓴다. 다음 날이 휴무면 그다음 영업일을 쓴다.
+- 다음 날의 예측 행이 없으면 날씨·행사 계수를 1로 둔 예측값을 올림해 쓴다. 그날 일부 메뉴의 예측 행만 있으면 없는 메뉴만 그렇게 계산한다. 다음 날이 휴무면 그다음 영업일을 쓴다.
 - 사장님이 targetDate 준비량을 40인분으로 고치면 expectedUsage는 100개가 되고 재고 100개는 부족이 아니다.
-- `stock=null`인 재료, LATER 재료, 레시피에 쓰이지 않는 재료는 목록에 없다.
+- `stock=null`인 재료, 레시피에 쓰이지 않는 재료는 목록에 없다.
 - 계란의 최근 입고일이 11/8이고 계란이 든 발주서를 11/9에 보냈으면 `ordered=true`다. 발주서를 만들기만 하고 보내지 않았거나, 11/10 날짜 영수증을 확정한 뒤에는 `ordered=false`다.
 - 배너: 부족 재료가 계란(ordered=false)뿐이면 title `계란 재고가 얼마 안 남았어요`, message `발주해 주세요 · 이미 발주했다면 영수증을 올려주세요`. 계란·김·떡 3개면 title `계란·김 외 1개 재고가 얼마 안 남았어요`. 전부 ordered=true면 message `이미 발주한 재료예요 · 받았다면 영수증을 올려주세요`.
 - NIGHT 푸시 body: 발주하지 않은 부족 재료가 계란·김이면 `김밥 60인분 등 12개 메뉴 · 계란 외 1개 발주가 필요해요`. 부족 재료가 전부 ordered=true거나 없으면 발주 문구가 없다. MORNING 푸시에는 붙지 않는다.
@@ -92,8 +92,8 @@ if/then 조건, Decimal의 JSON number, nullable과 필드 생략, 204 빈 body�
 1. 가게 생성 201 → 푸시 구독 등록 204.
 2. 판매 업로드 202 → PARSE_SALES(열 판별 fake) → NEEDS_CONFIRMATION의 columnMapping/preview 확인.
 3. confirm 202 → APPLY_SALES → COMPLETED → FIT_FORECAST_MODEL → 오늘·내일 예측. confirm을 반복해도 판매합이 같다. 과거 날씨 호출이 실패해도 `store.forecast_model`이 저장되고 예측이 만들어진다.
-4. GENERATE_RECIPES 완료 → candidates READY(배지 포함) → CORE 확정 204.
-5. 영수증을 건너뛰고 recipes GET(핵심 재료 항목만) / PUT.
+4. GENERATE_RECIPES 완료 → recipes GET의 `generationStatus`가 READY.
+5. 영수증을 건너뛰고 recipes GET(모든 재료 항목) / PUT.
 6. NIGHT 예측 완료 후 20:00 이후 홈 200: 예측 있음, FIRST_FORECAST 배너, `order=null`(거래처 없음).
 
 ### A02 영수증과 발주
@@ -111,7 +111,7 @@ if/then 조건, Decimal의 JSON number, nullable과 필드 생략, 204 빈 body�
 
 1. 자정이 지나면 홈이 TODAY, targetDate 오늘. 어젯밤 보낸 발주서가 있으면 DELIVERY_EXPECTED에 품목이 나열된다.
 2. produced PUT 204 → 홈에 반영되고 daily_sales와 재고는 그대로다.
-3. 판매 엑셀을 반영해 핵심 재료의 재고가 2영업일 예상 사용량 아래로 내려가면 홈에 LOW_STOCK 배너가 나온다. 조회 전후로 DB 행 수가 같다.
+3. 판매 엑셀을 반영해 재료의 재고가 2영업일 예상 사용량 아래로 내려가면 홈에 LOW_STOCK 배너가 나온다. 조회 전후로 DB 행 수가 같다.
 4. 그 재료가 든 발주서를 만들어 send-records까지 기록하면 배너 message가 영수증 안내로 바뀐다(부족 재료가 그것뿐일 때).
 5. 그 재료의 영수증을 확정해 재고가 예상 사용량 이상이 되면 배너가 사라진다.
 
@@ -124,7 +124,8 @@ if/then 조건, Decimal의 JSON number, nullable과 필드 생략, 204 빈 body�
 | 시작 상태와 행동 | 기대 결과 |
 |---|---|
 | 20시 이후 부족 재료가 있는 가게의 홈 조회와 같은 대상일의 NIGHT 푸시 발송 | 홈 LOW_STOCK 배너의 재료와 푸시 발주 문구의 재료가 같은 `FindLowStock` 결과에서 나온다. 푸시에는 `ordered=false`인 재료만 들어간다. |
-| 부족 재료가 있는 상태에서 getOrderPlan 조회 | 발주 계획의 stock과 부족 판단에 쓴 재고가 같은 값이다(둘 다 asOf=targetDate−1일). |
+| 20시 이후 부족 재료가 있는 상태에서 getOrderPlan 조회 | 발주 계획의 stock과 부족 판단에 쓴 재고가 같은 값이다(둘 다 오늘 영업 종료 기준). |
+| 20시 전 부족 배너가 뜬 상태에서 오늘 날짜 영수증을 확정 | 재고가 예상 사용량 이상이 되면 다음 홈 조회에서 배너가 사라진다. |
 | 전날 밤 행사에 장소와 혼잡도 정보가 없고 그 행사가 발주 계수에 반영됨 | 홈·발주 상세 모두 200. 양쪽 EventSummary에서 place·crowdLevel 키가 생략된다. |
 | 같은 대상일의 NIGHT 추천 50, MORNING 작업 지연, 07:30 푸시 작업 실행 | 밤 수량을 보내지 않고 대기한다. 대기 기한 안에 아침 추천 48로 성공하면 푸시 문구는 48, 홈의 previousRecommended는 50이다. |
 | 같은 import를 여러 번 확정 | 판매와 최초 후속 작업은 한 번만 반영된다. |
@@ -133,7 +134,7 @@ if/then 조건, Decimal의 JSON number, nullable과 필드 생략, 204 빈 body�
 
 ## 구현 완료 체크
 
-- 22개 엔드포인트 문서의 완료 조건을 operationId별 테스트에 연결했다.
+- 20개 엔드포인트 문서의 완료 조건을 operationId별 테스트에 연결했다.
 - Alembic migration이 빈 DB에 적용된다. 테이블·컬럼이 `erd.dbml`과 일치한다.
 - 외부 포트마다 fake와 실제 adapter가 같은 계약을 만족한다. 실제 adapter는 저장한 실제 응답 fixture로 검증했다.
 - 모듈 경계를 ORM 객체나 임의 dict로 넘기지 않는다.

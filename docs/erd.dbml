@@ -29,9 +29,7 @@ Table ingredient {
   id text [pk]
   store_id text [not null, ref: > store.id]
   name text [not null]
-  status text [not null, default: 'LATER', note: 'CORE | LATER']
   unit text [not null, note: '개 | g. 레시피 · 재고 · 입고 · 발주 수량이 모두 이 단위']
-  tags json [not null, default: '[]', note: 'RECOMMENDED | EXPENSIVE 배열']
 
   indexes {
     (store_id, name) [unique]

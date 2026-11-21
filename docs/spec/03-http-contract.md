@@ -2,7 +2,7 @@
 
 ## 경로와 DTO
 
-가게 API 22개 operation은 `/v1` prefix 아래에 등록한다. 엔드포인트 문서에는 OpenAPI처럼 prefix를 뺀 경로를 쓴다. 기존 루트 `/health`, `/openapi.yaml`, `/scalar`는 그대로 유지한다. operationId를 명시하고 정적 OpenAPI와 런타임 라우트를 계약 테스트로 대조한다.
+가게 API 20개 operation은 `/v1` prefix 아래에 등록한다. 엔드포인트 문서에는 OpenAPI처럼 prefix를 뺀 경로를 쓴다. 기존 루트 `/health`, `/openapi.yaml`, `/scalar`는 그대로 유지한다. operationId를 명시하고 정적 OpenAPI와 런타임 라우트를 계약 테스트로 대조한다.
 
 request/response 클래스는 별도다. 내부 snake_case와 공개 camelCase는 alias로 연결하고, 응답에 ORM 필드나 내부 diagnostics가 섞이지 않게 명시적 presenter를 둔다. 전체 필드·필수/nullable·enum의 기준은 [openapi.yaml](../../openapi.yaml) 하나다. 이 스펙은 스키마를 다시 옮겨 적지 않는다.
 

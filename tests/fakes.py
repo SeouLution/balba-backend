@@ -16,9 +16,9 @@ from app.infrastructure.providers.ports import (
     ReceiptReading,
     ReceiptReadingLine,
     RecipeDraft,
-    RecipeDraftIngredient,
     RecipeDraftItem,
     RecipeDraftMenu,
+    WeatherObservation,
 )
 
 JPEG_HEAD = b"\xff\xd8\xff\xe0"
@@ -45,7 +45,7 @@ class Fake:
 
 @dataclass
 class FakeColumns(Fake):
-    detection: ColumnDetection = ColumnDetection("주문일자", "상품명", "수량", "결제금액", "TOSS_POS")
+    detection: ColumnDetection = ColumnDetection("주문일자", "상품명", "수량", "TOSS_POS")
 
     async def detect_columns(self, header, sample_rows):
         self._enter()
@@ -54,7 +54,7 @@ class FakeColumns(Fake):
 
 @dataclass
 class FakeReceipts(Fake):
-    async def read_receipt(self, jpeg: bytes, ingredient_names):
+    async def read_receipt(self, jpeg: bytes, ingredient_units):
         self._enter()
         payload = json.loads(jpeg[len(JPEG_HEAD) :])
         return ReceiptReading(
@@ -65,11 +65,9 @@ class FakeReceipts(Fake):
             lines=tuple(
                 ReceiptReadingLine(
                     raw_product_name=line["name"],
-                    quantity=Decimal(str(line["quantity"])) if line.get("quantity") is not None else None,
+                    amount=Decimal(str(line["amount"])) if line.get("amount") is not None else None,
                     unit=line.get("unit"),
-                    unit_price=line.get("unitPrice"),
-                    content_quantity=Decimal(str(line["content"])) if line.get("content") else None,
-                    usage_unit=line.get("usageUnit"),
+                    line_price=line.get("linePrice"),
                     match_name=line.get("match"),
                     match_kind=line.get("kind", "none"),
                 )
@@ -80,29 +78,24 @@ class FakeReceipts(Fake):
 
 @dataclass
 class FakeRecipes(Fake):
-    """recipes: 메뉴 이름 → [(재료, 사용 단위, 사용량)]. purchase: 재료 → (구매 단위, 환산량)."""
+    """recipes: 메뉴 이름 → [(재료, 단위, 1인분 사용량)]."""
 
     recipes: dict = field(default_factory=dict)
-    purchase: dict = field(default_factory=dict)
 
-    async def draft_recipes(self, category, menus, ingredient_names):
+    async def draft_recipes(self, category, menu_names, ingredient_units):
         self._enter()
-        drafted = [
-            RecipeDraftMenu(
-                name,
-                tuple(
-                    RecipeDraftItem(ingredient, unit, Decimal(str(usage)))
-                    for ingredient, unit, usage in self.recipes.get(name, [])
-                ),
+        return RecipeDraft(
+            tuple(
+                RecipeDraftMenu(
+                    name,
+                    tuple(
+                        RecipeDraftItem(ingredient, unit, Decimal(str(usage)))
+                        for ingredient, unit, usage in self.recipes.get(name, [])
+                    ),
+                )
+                for name in menu_names
             )
-            for name, _ in menus
-        ]
-        names = {item.ingredient_name for menu in drafted for item in menu.items}
-        ingredients = []
-        for name in sorted(names):
-            purchase_unit, content = self.purchase.get(name, (None, None))
-            ingredients.append(RecipeDraftIngredient(name, purchase_unit, Decimal(str(content)) if content else None))
-        return RecipeDraft(tuple(drafted), tuple(ingredients))
+        )
 
 
 @dataclass
@@ -121,6 +114,15 @@ class FakeWeather(Fake):
     async def day_weather(self, point, target_date, now):
         self._enter()
         return self.day or DayWeather((), None)
+
+
+@dataclass
+class FakeObservations(Fake):
+    records: list[WeatherObservation] = field(default_factory=list)
+
+    async def daily_observations(self, start, end):
+        self._enter()
+        return [record for record in self.records if start <= record.observed_on <= end]
 
 
 @dataclass
@@ -163,6 +165,7 @@ def fake_providers() -> Providers:
         recipes=FakeRecipes(),
         geocoder=FakeGeocoder(),
         weather=FakeWeather(),
+        observations=FakeObservations(),
         events=FakeEvents(),
         crowd=FakeCrowd(),
         push=FakePush(),

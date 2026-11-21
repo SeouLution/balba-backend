@@ -31,7 +31,7 @@ receipts / `ConfirmReceiptScan.execute(StoreContext, ScanId, answers:List<{quest
 2. PROCESSING은 422, SCAN_RECEIPTS가 DEAD면 500. 이미 CONFIRMED면: body가 없거나 저장된 답과 같으면 204, 다른 답이면 422.
 3. NEEDS_REVIEW의 모든 질문에 하나씩 답이 있어야 한다. 모르는 questionId나 빠진 답은 422. 질문이 없으면 body 없이 진행한다.
 4. 가게 잠금 안에서 사진별 중복을 다시 판정한다(D22). 중복 사진은 안내만 남기고, 남은 사진에 대해서만 거래처를 이름으로 찾거나 만든다. 확인된 전화번호가 없는 거래처에만 영수증 번호와 날짜를 넣는다.
-5. 재료를 연결하거나 만든다(SAME → 후보 재료, DIFFERENT·신규 → 새 LATER 재료). 새 재료의 단위는 그 줄의 단위(개 또는 g)다. 줄의 단위가 연결된 재료의 단위와 다르면 그 줄은 빼고 '못 읽은 줄' 문구로 안내에 더한다(D31).
+5. 재료를 연결하거나 만든다(SAME → 후보 재료, DIFFERENT·신규 → 새 재료). 새 재료의 단위는 그 줄의 단위(개 또는 g)다. 줄의 단위가 연결된 재료의 단위와 다르면 그 줄은 빼고 '못 읽은 줄' 문구로 안내에 더한다(D31).
 6. 줄마다 receipt_line(supplier_id, purchased_on, ingredient_id, product_name, quantity, unit_price)을 만든다. quantity는 재료 단위 입고량, unit_price는 `줄 금액 ÷ 입고량`이다(D49). 입고는 여기서만 생긴다.
 7. 확인된 요일이 없는 거래처의 주문 요일을 추정한다(D15).
 8. 사진별 비교값·반영 여부, 최종 그룹·안내, 답과 새로 만든 id를 `receipt_scan.result`에 저장하고 `status=CONFIRMED`로 바꾼다.

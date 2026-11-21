@@ -14,7 +14,7 @@ ERD의 text ID, composite PK, 날짜/timestamptz, nullable을 그대로 따른�
 |---|---|---|
 | store | stores (`forecast_model` 칸만 forecasting) | 요일 7개, 좌표는 둘 다 null이거나 둘 다 값. `first_forecast_at`은 첫 예측 때 한 번만 채움. `forecast_model`은 FIT_FORECAST_MODEL만 통째로 덮어씀 |
 | menu | catalog | `(store_id,name)` unique. 단위 컬럼이 없다. 메뉴 수량은 모두 인분(D46) |
-| ingredient | catalog | CORE/LATER. `unit`은 `개` 또는 `g`이고 만든 뒤 바꾸지 않는다(D47) |
+| ingredient | catalog | `unit`은 `개` 또는 `g`이고 만든 뒤 바꾸지 않는다(D47) |
 | recipe_item | catalog | 같은 가게의 메뉴·재료만 |
 | sales_import | sales | `file_path`는 내부 저장 위치. `detection`에 열 매핑과 미리보기 |
 | daily_sales | sales | `(menu_id,sold_on)` 칸 교체. 더하지 않음 |

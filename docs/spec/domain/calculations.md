@@ -2,7 +2,7 @@
 
 수량 단위는 두 종류뿐이다. 메뉴 수량은 모두 `인분`이다(D46). 재료 수량은 그 재료의 단위인 `개` 또는 `g`이고, 레시피 사용량·입고량·재고·발주 수량이 모두 이 단위다(D47). 판·봉 같은 구매 단위와 환산 비율은 없다.
 
-모든 계산은 불변 입력 스냅샷, [정책 파일](../../../app/policies/defaults.toml) 값, Clock에서 받은 기준 시각으로 결정된다. 이 문서가 쓰는 정책 값 중 아직 파일에 없는 것은 [결정 문서의 정책 파일 변경 목록](../00-scope-and-decisions.md)에 초안 값과 함께 적었다. 소수는 Decimal이고 중간 계산은 반올림하지 않는다. 정책 파일의 숫자는 AI 초안이며 예측 성능을 보장하지 않는다. 아래에서 `policy.x.y`는 정책 파일의 `[x] y`다.
+모든 계산은 불변 입력 스냅샷, [정책 파일](../../../app/policies/defaults.toml) 값, Clock에서 받은 기준 시각으로 결정된다. 소수는 Decimal이고 중간 계산은 반올림하지 않는다. 정책 파일의 숫자는 AI 초안이며 예측 성능을 보장하지 않는다. 아래에서 `policy.x.y`는 정책 파일의 `[x] y`다.
 
 ## C01 영업일과 홈
 
@@ -112,7 +112,7 @@ comparison은 사용자가 고친 값(adjusted)이 아니라 recommended 기준�
 
 발주 계획은 `ordering.PlanOrder(targetDate)` 한 곳에서 만든다. 수량은 모두 재료 단위(개 또는 g)다.
 
-1. targetDate의 최종 준비량과 **CORE** 재료 레시피로 `need_i = Σ(planned_m × recipeUsage_mi)`.
+1. targetDate의 최종 준비량과 레시피로 `need_i = Σ(planned_m × recipeUsage_mi)`.
 2. 재고는 `asOf = targetDate − 1일`로 계산한다(C04).
 3. `shortage = max(0, need − stock)`.
 4. `quantity = ceil(shortage)`. 0이면 줄을 뺀다. 포장 단위로 맞춰 올리지 않는다. 사장님이 2.8에서 +/−로 고친 수량이 발주서에 들어간다.
@@ -129,21 +129,21 @@ comparison은 사용자가 고친 값(adjusted)이 아니라 recommended 기준�
 
 ## C06 재고 부족 안내
 
-핵심(CORE) 재료의 남은 재고가 앞으로 `policy.low_stock.days`일 동안 쓸 것으로 예상되는 양보다 적으면 사장님에게 발주를 안내한다(D41). 저장하지 않고 조회할 때 계산한다. `ordering.FindLowStock(targetDate)` 한 곳에서 만든다.
+재료의 남은 재고가 앞으로 `policy.low_stock.days`일 동안 쓸 것으로 예상되는 양보다 적으면 사장님에게 발주를 안내한다(D41, D52). 저장하지 않고 조회할 때 계산한다. `ordering.FindLowStock(targetDate)` 한 곳에서 만든다.
 
 ```text
 days            = targetDate부터 날짜순으로 휴무가 아닌 날 policy.low_stock.days 개
                   (targetDate를 포함해 14일 안에서 찾고, 모자라면 찾은 만큼만 쓴다)
-quantity_m(d)   = d의 예측 행이 있으면 planned
+quantity_m(d)   = d에 메뉴 m의 예측 행이 있으면 planned
                   없으면 C02에서 weatherFactor=1, eventFactor=1로 계산한 값의 올림
                   그 메뉴의 예측을 만들 수 없으면 0
 expectedUsage_i = Σ_{d∈days} Σ_m quantity_m(d) × recipeUsage_mi
-stock_i         = C04, asOf = targetDate − 1일   (C05와 같은 값)
-lowStock_i      = 재료 i가 CORE이고, stock_i가 null이 아니고, expectedUsage_i > 0 이고, stock_i < expectedUsage_i
+stock_i         = C04, asOf = 오늘(요청 시각의 KST 날짜)
+lowStock_i      = stock_i가 null이 아니고, expectedUsage_i > 0 이고, stock_i < expectedUsage_i
 ordered_i       = 재료 i가 줄에 든 발주서 중 sent_at이 있고, sent_at의 KST 날짜가 그 재료의 최근 입고일(C03의 purchased_on)보다 늦은 것이 있으면 true
 ```
 
-targetDate는 C01의 값이다(20:00 전에는 오늘, 이후에는 내일). `stock=null`인 재료는 부족 여부를 판단할 수 없으므로 안내하지 않는다. 목록은 `stock ÷ expectedUsage` 오름차순, 동률은 ingredientId 순이다.
+targetDate는 C01의 값이다(20:00 전에는 오늘, 이후에는 내일). 재고는 오늘까지의 입고와 판매 기록을 반영한 값이라서 오늘 날짜 영수증을 확정하면 바로 반영된다. 20:00 이후에는 C05의 재고(`asOf = targetDate − 1일`)와 같은 값이다. `stock=null`인 재료는 부족 여부를 판단할 수 없으므로 안내하지 않는다. 목록은 `stock ÷ expectedUsage` 오름차순, 동률은 ingredientId 순이다.
 
 `ordered`는 앱에서 발주서를 보낸 뒤 아직 그 재료의 영수증이 올라오지 않았다는 뜻이다. 앱 밖에서 한 발주는 알 수 없으므로 `ordered=false`인 재료에도 영수증 안내를 함께 적는다(C07).
 

@@ -4,8 +4,8 @@
 
 | 자료 | 검토 결과 | SHA-256 |
 |---|---|---|
-| `openapi.yaml` | 0.6.0-draft, 26 operations(가게 API 22 + 계정 4), 공개 HTTP 계약의 기준. 2026-11-19 `OrderPlanSummary.estimatedTotal`, `getHome`, `HomeView` 설명 갱신. 2026-11-21 `Alert`, `Home.cautions`, `IngredientList.notices`, `SurplusStockItem`, 배지 `SHORT_SHELF_LIFE` 삭제(D04, D38). `getHome` 응답에 `businessHours` 추가. 같은 날 할인 operation 3개와 할인 스키마 전부, `DeliveryAppCode`, `dryRun` 공통 규칙 삭제(D42), `HomeBanner.type`에 `LOW_STOCK` 추가(D41), `ForecastItem.comparison`·`summaryText` 설명 갱신(D39). 재료 단위를 `개`·`g`으로 통일: `IngredientUnit` 추가, `PurchaseUnit` 삭제, `IngredientSummary.usageUnit`을 필수 `unit`으로 변경, `PriceInfo.unitPrice`를 재료 단위당 원(소수 가능)으로 변경, 메뉴 `unit`은 항상 `인분`(D46, D47, D49) | `718adc2982ef532a925eba134321d051d8ffaaf1c350338b1e8efaf4fbfc35bb` |
-| `docs/erd.dbml` | 17개 테이블. 2026-11-19 `background_job` 테이블, `store.first_forecast_at`, `receipt_scan.images` 추가. 2026-11-21 `ingredient.shelf_life_days` 삭제(D04). 같은 날 `weather_observation` 테이블과 `store.forecast_model` 추가(D39, D40, D44), `discount` 테이블과 `menu.price` 삭제(D42), `background_job.kind`에 `FIT_FORECAST_MODEL` 추가. `menu.unit`, `ingredient.purchase_unit`, `ingredient.content_quantity` 삭제, `ingredient.usage_unit`을 `unit`(개·g)으로 변경, `receipt_line.unit_price`를 재료 단위당 원 numeric으로 변경(D46, D47, D49) | `3780b558a3d08ef90505a34f2583524283dbeeef72facbd11a8674bc0d0b8855` |
+| `openapi.yaml` | 0.6.0-draft, 24 operations(가게 API 20 + 계정 4), 공개 HTTP 계약의 기준. 2026-11-19 `OrderPlanSummary.estimatedTotal`, `getHome`, `HomeView` 설명 갱신. 2026-11-21 `Alert`, `Home.cautions`, `IngredientList.notices`, `SurplusStockItem`, 배지 `SHORT_SHELF_LIFE` 삭제(D04, D38). `getHome` 응답에 `businessHours` 추가. 같은 날 할인 operation 3개와 할인 스키마 전부, `DeliveryAppCode`, `dryRun` 공통 규칙 삭제(D42), `HomeBanner.type`에 `LOW_STOCK` 추가(D41), `ForecastItem.comparison`·`summaryText` 설명 갱신(D39). 재료 단위를 `개`·`g`으로 통일: `IngredientUnit` 추가, `PurchaseUnit` 삭제, `IngredientSummary.usageUnit`을 필수 `unit`으로 변경, `PriceInfo.unitPrice`를 재료 단위당 원(소수 가능)으로 변경, 메뉴 `unit`은 항상 `인분`(D46, D47, D49). 핵심 재료 operation 2개(`listIngredientCandidates`, `setCoreIngredients`)와 `IngredientCandidate`·`IngredientStatus`, `listIngredients`의 `status` 쿼리, `IngredientSummary.status`, `IngredientList.counts` 삭제, `listRecipes` 응답에 `generationStatus` 추가(D52) | `abd0b0a0afa3d779c86950b4b1f78ce4761ea7c6be3007e117055abf79d1de3e` |
+| `docs/erd.dbml` | 17개 테이블. 2026-11-19 `background_job` 테이블, `store.first_forecast_at`, `receipt_scan.images` 추가. 2026-11-21 `ingredient.shelf_life_days` 삭제(D04). 같은 날 `weather_observation` 테이블과 `store.forecast_model` 추가(D39, D40, D44), `discount` 테이블과 `menu.price` 삭제(D42), `background_job.kind`에 `FIT_FORECAST_MODEL` 추가. `menu.unit`, `ingredient.purchase_unit`, `ingredient.content_quantity` 삭제, `ingredient.usage_unit`을 `unit`(개·g)으로 변경, `receipt_line.unit_price`를 재료 단위당 원 numeric으로 변경(D46, D47, D49). `ingredient.status`, `ingredient.tags` 삭제(D52) | `5785ce7de218e1b8882ba11e954b4b6b567e6e385a75c9eca7541c1557967f3b` |
 | `seoulution-data-flow.pdf` | 다운로드 폴더에서 확인, 1페이지 전체 검토, 2026-11-18 작성 | `426312033ec619cd60638dc128c7fc87db2591931ee9aaaa8620c737fb870983` |
 | [Figma node 1:2](https://www.figma.com/design/n8dGkDWXOn3A1wAxg3N3dM/SeouLution-%EC%82%AC%EC%A0%84-%EC%A0%9C%EC%B6%9C%EB%AC%BC?node-id=1-2) | 2026-11-19 브라우저 보기 권한으로 TASK 1~4 화면과 설명 문구를 전부 확인. 화면이 이미지 레이어라 해시는 없음 | — |
 | `app/main.py`, requirements, Dockerfile, CI/deploy | Python 3.12, FastAPI, ARM64 이미지, 포트 8000, uvicorn 프로세스 1개 | 실행 기반 참고 |
@@ -47,7 +47,7 @@ PDF의 흐름은 `POS 판매 → 요일 평균 → 날씨/행사 보정 → 준�
 | D18 | DESIGN | 홈 상위 3개는 대상일 이전 28일 판매합 내림차순, 동률은 menuId. 재료 후보와 재료 탭은 쓰이는 메뉴 수 내림차순, 동률은 ingredientId. | 정렬 |
 | D19 | 폐기 (2026-11-21) | 할인 dryRun의 ID 규칙이었다. D42로 할인이 없어졌다. | — |
 | D20 | USER | 영수증을 건너뛰어 거래처가 없으면 발주가 없다. `Home.order=null`, `OrderPlan.suppliers=[]`. | 홈, 발주 |
-| D21 | USER | 1.6 레시피 화면은 핵심(CORE) 재료 항목만 다룬다. 조회는 CORE 재료 항목만 주고, 저장은 CORE 재료 항목만 교체한다. LATER 재료의 레시피는 서버에 그대로 남는다. | 레시피 2개 엔드포인트 |
+| D21 | 폐기 (2026-11-21) | 1.6 레시피 화면이 핵심(CORE) 재료 항목만 다루는 규칙이었다. D52로 핵심 재료 구분이 없어졌다. | — |
 | D22 | USER + SOURCE | 영수증 1장은 ERD 정의대로 `같은 거래처 + 같은 날짜` 묶음이다. 거래처·날짜·품목 목록이 똑같은 영수증은 한 장만 반영하고 `removedDuplicateTexts`로 알린다. | 영수증 |
 | D23 | USER | 읽지 못한 영수증 장이나 줄은 빼고 읽은 것만 반영한다. 뺐다는 안내도 `removedDuplicateTexts`에 넣는다(전용 필드가 없다). | 영수증 |
 | D24 | USER | 외부 연동은 전부 실제 서비스를 쓴다. 공급자는 [외부 연동](infrastructure/integrations.md)에 고정한다. 프론트는 웹 PWA이고 푸시는 표준 웹 푸시(VAPID)다. | 연동, 푸시 |
@@ -67,7 +67,7 @@ PDF의 흐름은 `POS 판매 → 요일 평균 → 날씨/행사 보정 → 준�
 | D38 | USER (2026-11-21) | 단가 변동 알림을 만들지 않는다. D04와 합쳐 알림 종류가 하나도 남지 않으므로 `Alert`, `Home.cautions`, `IngredientList.notices`를 공개 계약에서 뺐다. | 홈, 재료 탭 |
 | D39 | USER (2026-11-21) | 준비량 추천은 과거 POS 엑셀에서 구한 가게별 예측 모델을 쓴다. 판단 기준은 세 가지다. (1) 그 메뉴가 그 기온·강수 조건에서 평소보다 얼마나 팔렸는지(메뉴 단위 날씨 경향), (2) 그 가게가 그 요일에 평소보다 얼마나 팔렸는지(가게 단위 요일 경향), (3) 근처에 행사가 있는지(D10의 고정 계수). '지난 4주 같은 요일 평균 × 고정 날씨 계수'를 바꾼 결정이다. 계산식은 [C02](domain/calculations.md)다. | 예측, 홈, 발주, ERD |
 | D40 | USER (2026-11-21) | 요일·날씨 경향을 얼마나 반영할지 정하는 가중치는 가게마다 서버가 자동으로 정한다. 판매 엑셀이 반영될 때마다 그 가게 학습일의 앞 절반으로 경향을 구하고 뒤 절반의 실제 판매와 맞춰 보아 오차가 가장 작은 가중치를 고른 뒤 `store.forecast_model`에 저장한다. 판매 기록이 짧은 가게는 조절하지 않고 정책 파일의 기본 가중치를 쓴다. | 예측, 작업, ERD |
-| D41 | USER (2026-11-21) | 핵심 재료의 남은 재고가 앞으로 2영업일 예상 사용량보다 적으면 사장님에게 알린다. 홈 배너(LOW_STOCK)로 보여주고, 밤 8시 푸시 문구에 한 줄을 더한다. 새 알림 시각은 만들지 않는다. 문구는 '발주해 주세요'와 '이미 발주했다면 영수증을 올려주세요'다. 일수는 정책 파일에 둔다. 발주서 기능(거래처별 추천 수량, 발주서 문구, 보낸 기록, 주문 요일)은 전부 그대로 둔다. | 홈, 푸시, 발주 |
+| D41 | USER (2026-11-21) | 재료의 남은 재고가 앞으로 2영업일 예상 사용량보다 적으면 사장님에게 알린다. 대상은 처음에 핵심 재료였고 D52로 모든 재료가 됐다. 홈 배너(LOW_STOCK)로 보여주고, 밤 8시 푸시 문구에 한 줄을 더한다. 새 알림 시각은 만들지 않는다. 문구는 '발주해 주세요'와 '이미 발주했다면 영수증을 올려주세요'다. 일수는 정책 파일에 둔다. 발주서 기능(거래처별 추천 수량, 발주서 문구, 보낸 기록, 주문 요일)은 전부 그대로 둔다. | 홈, 푸시, 발주 |
 | D42 | USER (2026-11-21) | 할인 기능을 뺀다. 할인 추천·기록·생성 엔드포인트 3개, `discount` 테이블, 정책 파일 `[discount]`를 삭제한다. 할인 계산에만 쓰던 `menu.price`와 엑셀 금액 열 읽기도 삭제한다. | 공개 계약, ERD, 엑셀 올리기 |
 | D43 | USER (2026-11-21) | 만든 양 기록(`setProduction`, `forecast.produced`)은 화면 표시용으로 남긴다. 재고(D03)를 포함해 어떤 계산에도 쓰지 않는다. | 홈, setProduction |
 | D44 | DESIGN (2026-11-21) | 과거 날씨는 기상청 지상(종관, ASOS) 일자료의 서울 관측 지점 1곳 값을 모든 가게가 함께 쓴다(`weather_observation`). 서비스 범위가 서울이기 때문이다. 서울 밖으로 넓히면 가게별 가까운 지점으로 바꾼다. | 예측 모델, 연동, ERD |
@@ -77,6 +77,8 @@ PDF의 흐름은 `POS 판매 → 요일 평균 → 날씨/행사 보정 → 준�
 | D48 | USER (2026-11-21) | 필요 없어진 정책 값을 정책 파일에서 뺀다. `[discount]`(D42), `[menu_unit]`(D46), 고정 날씨 계수 `[forecast.weather_factor]`·`[forecast.weather_factor_by_category]`(D10)다. 새 예측의 계산 상수 중 바꿀 일이 없는 것(최근 판매 수준 28일, 앞 절반으로 경향 계산, 가중치 후보 5개, 영업일 탐색 14일)은 정책 값으로 두지 않고 [C02·C06](domain/calculations.md)에 적는다. | 정책 파일 |
 | D49 | DESIGN (2026-11-21) | 발주 수량은 부족한 양을 재료 단위로 올림한 값이다. 구매 단위를 저장하지 않으므로 포장 단위에 맞춰 올리지 않는다(예: 떡 4,538g). 사장님이 2.8에서 고친 수량이 발주서에 들어간다. 단가는 재료 단위 1개당 원(`영수증 줄 금액 ÷ 입고량`)으로 저장하며 소수일 수 있다. | 발주, 영수증, ERD |
 | D50 | DESIGN (2026-11-21) | 영수증 줄에 포장량이 적혀 있지 않으면('계란 1판') 영수증을 읽는 AI가 통상 포장량으로 입고량을 추정한다(30개). 구매 단위별 환산량을 따로 저장하지 않기 때문이다. 추정이 틀리면 재고가 그만큼 어긋난다. | 영수증 읽기, 재고 |
+| D51 | DESIGN (2026-11-21) | 재고 부족 판단의 재고는 오늘까지의 입고와 판매 기록을 반영한 값이다. 발주 계획(C05)처럼 대상일 전날 기준으로 두면, 20시 전에 오늘 날짜 영수증을 올려도 그날 밤까지 배너가 남기 때문이다. 20시 이후에는 두 값이 같다. | 홈 배너, 푸시 |
+| D52 | USER (2026-11-21) | 핵심 재료를 고르는 단계를 없애고 가게의 모든 재료(AI 레시피 초안으로 생긴 재료와 영수증으로 생긴 재료)를 관리한다. `listIngredientCandidates`·`setCoreIngredients` 엔드포인트, `ingredient.status`(CORE/LATER), 재료 배지(`ingredient.tags`, 정책 파일 `[tags]`)를 삭제한다. 발주 추천, 발주서, 재고 부족 안내는 모든 재료가 대상이다. 레시피에 쓰이지 않는 재료는 필요량이 0이라 추천과 안내에 나오지 않는다. 1.6 레시피 조회는 메뉴의 모든 재료 항목을 주고, 저장은 요청에 담긴 메뉴의 레시피 전체를 교체한다. 레시피 생성 상태(`generationStatus`)는 `listRecipes` 응답으로 옮긴다. D21을 바꾼 결정이다. | 공개 계약, ERD, 레시피, 발주, 재고 부족 안내, 정책 파일 |
 
 ## 미정인 정책
 
@@ -111,9 +113,9 @@ U02~U03에만 의존하는 처리와 인수 기준은 결정 후 추가한다. �
 |---|---|---|
 | 1.1 | 주소는 날씨·행사 조회에만 쓴다. 쉬는 날에는 알림을 보내지 않는다. | C01, jobs |
 | 1.3 | 날짜·메뉴 이름·판매 수량 3개 열을 보여주고 확인받는다. | D09 |
-| 1.4 | 배지 3종(추천·유통기한 짧음·비쌈)이 영수증을 찍기 전에 나온다. | 정책 파일 `[tags]`. '유통기한 짧음'은 만들지 않는다(D04) |
+| 1.4 | 핵심 재료를 고르는 화면이다. 배지 3종(추천·유통기한 짧음·비쌈)이 영수증을 찍기 전에 나온다. | 만들지 않는다. 모든 재료를 관리하므로 고르는 단계와 배지가 없다(D52) |
 | 1.5 | 영수증은 선택 단계다. | D20 |
-| 1.6 | 고른 핵심 재료와 연결되는 항목만 보여준다. | D21 |
+| 1.6 | 고른 핵심 재료와 연결되는 항목만 보여준다. | 메뉴의 모든 재료 항목을 보여준다(D52) |
 | 2.0-1 | 온보딩 직후 화면은 내일 준비량·발주 화면이다. 낮에 온보딩하면 D01에 따라 오늘 화면이 먼저 나온다. 시연은 D27로 맞춘다. | D01, D27 |
 | 2.2 | "만든 양을 안 적으면 추천량대로 만든 것으로 계산해요". 밤사이 변경 배너에 원인이 적혀 있다. | 만든 양은 계산에 쓰지 않으므로 이 문구는 따르지 않는다(D03, D43). 밤사이 변경은 C07 |
 | 2.7-1 | 평소 대비 배지, 한 줄 근거("지난 4주 토요일 평균 58줄 · 행사 +20%"). | C02, C07. 근거 문구는 `평소 토요일 58인분 · 행사 +20%` 형식으로 바뀌었다(D39, D46) |
@@ -124,31 +126,6 @@ U02~U03에만 의존하는 처리와 인수 기준은 결정 후 추가한다. �
 | 3.7 | "영수증 날짜로 추정했어요". 영수증이 적으면 직접 묻는다. | D15 |
 | 4.0~4.2 | 할인 탭, 할인 추천 목록, 할인 문구와 앱 바로가기. | 만들지 않는다(D42) |
 
-## 정책 파일 변경 목록 (2026-11-21, 구현 때 반영)
+## 검토가 필요한 정책 값
 
-[정책 파일](../../app/policies/defaults.toml)은 실행 중인 코드가 시작할 때 아래 값들을 필수로 읽는다. 값만 지우면 서버가 시작되지 않으므로 스펙만 고친 이번 변경에서는 파일을 손대지 않았다. 구현할 때 코드와 함께 반영하고 이 절을 지운다.
-
-삭제할 값(D48):
-
-| 위치 | 이유 |
-|---|---|
-| `[discount]`, `[[discount.channels]]` 전체 | 할인 삭제(D42) |
-| `[menu_unit]` 전체 | 메뉴 단위를 인분으로 통일(D46) |
-| `[forecast.weather_factor]`, `[forecast.weather_factor_by_category]` 전체 | 날씨 보정을 가게별 경향으로만 계산(D10) |
-
-남는 값: `[home] tomorrow_start`, `[forecast]`의 `similar_max_diff`·`event_radius_meters`·`event_factor`·`event_categories`, `[tags]`, `[supplier] order_days_min_receipt_dates`, `[upload]`. `version`과 파일 머리 주석은 날짜와 내용을 새로 맞춘다.
-
-추가할 값. 숫자는 실측 근거가 없는 AI 초안이다.
-
-| 위치 | 값 | 쓰이는 곳 |
-|---|---|---|
-| `[forecast] min_weekday_days` | `2` | 요일 경향을 쓰는 최소 학습일 수. 미만이면 1.0 |
-| `[forecast] min_bucket_days` | `5` | 날씨 구간 경향을 쓰는 최소 학습일 수. 미만이면 보정 없음 |
-| `[forecast] temperature_bands` | `[0, 10, 20, 28]` | 기온 구간 경계(℃) |
-| `[forecast] wet_min_mm` | `1.0` | 과거 날짜를 강수로 보는 일 강수량 |
-| `[forecast] index_min`, `index_max` | `0.5`, `1.5` | 날씨 경향 값의 허용 범위 |
-| `[forecast] fit_min_days` | `56` | 가중치를 조절하는 최소 학습일 수. 미만이면 두 가중치 1.0 |
-| `[forecast] observation_station` | 서울 지점 번호(공식 문서의 지점 목록에서 확인해 넣는다) | 과거 날씨 관측 지점(D44) |
-| `[low_stock] days` | `2` | 재고 부족을 판단하는 예상 사용 영업일 수(D41) |
-
-검토가 필요한 값: `[upload] sales_max_rows = 100000`, `sales_file_max_mib = 20`. 한도는 엑셀 원본 줄 수에 걸린다. 날짜·메뉴별 합계 형식이면 2년치도 들어가지만, 주문 건별 형식은 하루 300줄만 팔려도 2년치가 약 19만 줄이라 거절된다. POS 내보내기 형식을 확인한 뒤 정한다.
+`[upload] sales_max_rows = 100000`, `sales_file_max_mib = 20`. 한도는 엑셀 원본 줄 수에 걸린다. 날짜·메뉴별 합계 형식이면 2년치도 들어가지만, 주문 건별 형식은 하루 300줄만 팔려도 2년치가 약 19만 줄이라 거절된다. POS 내보내기 형식을 확인한 뒤 정한다.

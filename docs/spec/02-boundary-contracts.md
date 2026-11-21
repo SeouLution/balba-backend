@@ -36,7 +36,7 @@
 |---|---|
 | StoreSnapshot | `id, name, category, roadAddress, businessHours:List<DayHours>, geoPoint:GeoPoint?, generationStatus, firstForecastAt:Instant?, createdAt` |
 | MenuSnapshot | `id, storeId, name` |
-| IngredientSnapshot | `id, storeId, name, status:CORE\|LATER, unit:IngredientUnit, tags:List<Tag>` |
+| IngredientSnapshot | `id, storeId, name, unit:IngredientUnit` |
 | RecipeSnapshot | `menu:MenuSnapshot, items:List<{ingredient:IngredientSnapshot, usagePerMenu:NonNegativeQty}>` |
 | CatalogSnapshot | `storeId, menus, ingredients, recipes` |
 | DailySale | `menuId, soldOn, quantity` |

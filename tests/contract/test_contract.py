@@ -12,7 +12,6 @@ from tests.fakes import JPEG_HEAD
 QUANTITY = {"json": {"quantity": 1}}
 MINIMAL_REQUESTS = {
     "putPushToken": {"json": {"token": helpers.PUSH_TOKEN}},
-    "setCoreIngredients": {"json": {"ingredientIds": ["ing_x"]}},
     "saveRecipes": {"json": {"items": [{"menuId": "mn_x", "items": []}]}},
     "createSalesImport": {"files": {"file": ("sales.csv", b"a,b\n1,2\n", "text/csv")}},
     "adjustForecast": QUANTITY,
@@ -23,9 +22,6 @@ MINIMAL_REQUESTS = {
     "recordSent": {"json": {"channel": "COPY"}},
     "saveOrderDays": {"json": {"items": []}},
     "createReceiptScan": {"files": [("images", ("1.jpg", JPEG_HEAD + b"{}", "image/jpeg"))]},
-    "createDiscount": {
-        "json": {"menuId": "mn_x", "discount": {"type": "PERCENT", "value": 10}, "startTime": "19:00", "quantity": 1},
-    },
 }
 PATH_VALUES = {
     "storeId": "st_missing",
@@ -52,7 +48,7 @@ def test_runtime_routes_match_openapi_one_to_one():
         for method, operation in item.items()
     }
     declared = {(method, "/v1" + path, operation_id) for operation_id, (method, path, _) in OPERATIONS.items()}
-    assert len(declared) == 29
+    assert len(declared) == 24
     assert runtime == declared
 
 

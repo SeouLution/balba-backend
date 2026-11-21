@@ -86,7 +86,7 @@ SCAN_RECEIPTS 작업은 사진 한 장마다 Claude API를 한 번 부른다. �
 
 - 확정 시 가게 행을 잠근 뒤 최신 CONFIRMED 결과로 같은 비교를 다시 한다. 중복 사진은 거래처·재료·입고 반영에서 빼고 최종 안내를 저장한다. 반영한 사진의 비교값은 입고와 같은 commit에 기록한다.
 - 질문 답이 SAME이면 후보 재료에 연결하고, DIFFERENT면 `rawName`으로 새 재료를 만든다.
-- 새 재료는 LATER이고 단위는 그 줄의 `unit`이다.
+- 새 재료의 단위는 그 줄의 `unit`이다.
 - 줄의 단위가 연결된 재료의 단위와 다르면 그 줄은 빼고 안내한다(D31). 단위를 고치는 화면이 없다.
 - `receipt_line.quantity`에 입고량, `unit_price`에 `linePrice ÷ amount`(소수 6자리 반올림, linePrice가 null이면 null)를 넣는다(D49).
 - 거래처 전화번호는 확인된 번호(`phone_confirmed=true`)가 없을 때만 영수증 번호와 그 영수증 날짜(`phone_read_on`)를 넣는다.
@@ -99,9 +99,9 @@ GENERATE_RECIPES 작업은 레시피가 없는 메뉴를 Claude API에 보낸다
 
 단위는 `개`와 `g`만 답하게 한다(D47). 낱개로 세는 재료(계란, 김 등)는 `개`, 그 밖의 재료(어묵, 떡, 고기, 채소, 양념, 액체 등)는 `g`이고 액체는 1ml=1g으로 본다. 이미 있는 재료는 그 재료의 단위로 답하게 한다.
 
-검증: `menuName`은 보낸 메뉴 중 하나여야 한다. `usagePerMenu≥0`. 단위가 `개`·`g`이 아닌 항목은 버린다. 같은 재료가 메뉴마다 다른 단위로 오면 처음 나온 단위를 쓰고 다른 단위의 항목은 버린다. 이미 있는 재료와 단위가 다른 항목도 버린다. 가격, 거래처, 배지는 AI 출력에서 받지 않는다.
+검증: `menuName`은 보낸 메뉴 중 하나여야 한다. `usagePerMenu≥0`. 단위가 `개`·`g`이 아닌 항목은 버린다. 같은 재료가 메뉴마다 다른 단위로 오면 처음 나온 단위를 쓰고 다른 단위의 항목은 버린다. 이미 있는 재료와 단위가 다른 항목도 버린다. 가격, 거래처는 AI 출력에서 받지 않는다.
 
-저장: 재료를 이름으로 upsert한다(새 재료는 LATER, 단위는 AI가 답한 값). `tags`는 정책 파일 `[tags]`로 정한다. 이미 레시피가 있는 메뉴는 건드리지 않는다.
+저장: 재료를 이름으로 upsert한다(새 재료의 단위는 AI가 답한 값). 이미 레시피가 있는 메뉴는 건드리지 않는다.
 
 ## 주소 → 좌표
 
@@ -119,8 +119,10 @@ REFRESH_CONTEXT 작업이 가게 좌표를 기상청 격자로 바꿔(활용가�
 
 FIT_FORECAST_MODEL 작업이 판매 기록 날짜 중 관측 행이 없는 날짜 범위를 기상청 지상(종관, ASOS) 일자료에서 받아 `weather_observation`에 upsert한다([작업 명세](jobs.md)). 예측 모델이 과거 판매를 그날의 기온·강수와 맞춰 보는 데만 쓴다([C02](../domain/calculations.md)). 홈 화면의 날씨는 위 단기예보를 그대로 쓴다.
 
-- 관측 지점은 `policy.forecast.observation_station` 한 곳이다(서울, D44). 지점 번호는 활용가이드의 지점 목록에서 확인해 정책 파일에 넣는다.
-- 저장하는 값: `observed_on`(관측 날짜), `max_temperature_c`(일 최고기온), `precipitation_mm`(일 강수량). 강수량이 비어 있는 날을 0으로 볼지는 활용가이드와 실제 응답으로 확인하고 매핑 테스트에 남긴다. 최고기온이 없는 날은 저장하지 않는다.
+- 호출 주소는 `https://apis.data.go.kr/1360000/AsosDalyInfoService`이고 요청 변수는 `dataCd=ASOS`, `dateCd=DAY`, `startDt`, `endDt`(YYYYMMDD), `stnIds`다(2026-11-21 공공데이터포털 문서에서 확인). 오퍼레이션 이름 `getWthrDataList`는 같은 기관의 시간자료 서비스와 같은 이름으로 넣었고 문서에서 직접 확인하지 못했다.
+- 관측 지점은 `policy.forecast.observation_station` 한 곳이다(서울, D44). 값 `108`은 문서의 예시 값이며 서울 지점인지는 활용가이드의 지점 목록으로 확인해야 한다.
+- 저장하는 값: `observed_on`(응답의 `tm`), `max_temperature_c`(`maxTa`), `precipitation_mm`(`sumRn`). 강수량이 비어 있는 날은 0으로 저장한다. 문서에 설명이 없어 실제 응답으로 확인이 필요하다. 최고기온이 없는 날은 저장하지 않는다.
+- 실제 키로 호출해 보지 못했다. `python -m app.infrastructure.providers.check`가 이 서비스를 한 번 호출하고 응답을 `tests/fixtures/providers/kma_asos_daily_live.xml`에 저장한다. 저장한 응답으로 위 세 가지(오퍼레이션 이름, 지점, 빈 강수량)를 확인한다.
 - 어제까지만 요청한다. 한 번에 받을 수 있는 행 수에 제한이 있으면 기간을 나눠 요청한다. 이미 있는 날짜는 다시 받지 않는다.
 - 호출이 실패하면 `Unavailable`을 돌려준다. 작업은 이미 있는 행으로 모델을 계산한다.
 

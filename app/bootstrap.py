@@ -44,12 +44,13 @@ def container_from_env() -> Container:
     demo_now = env.get("DEMO_NOW")
     from app.infrastructure.providers.real import real_providers
 
+    policy = load_policy()
     return Container(
         db=Database(env["DATABASE_URL"]),
         clock=Clock(datetime.fromisoformat(demo_now) if demo_now else None),
-        policy=load_policy(),
+        policy=policy,
         files=FileStore(Path(env["FILE_STORAGE_ROOT"])),
-        providers=real_providers(env),
+        providers=real_providers(env, policy.observation_station),
         jwt_secret=env["JWT_SECRET"],
         scheduler_enabled=not demo_now,
     )

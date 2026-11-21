@@ -27,7 +27,7 @@ ordering / `CreatePurchaseOrders.execute(StoreContext, PurchaseOrderBatchInput) 
 ## 처리 순서
 
 1. suppliers≥1, supplierId 중복 없음, 거래처 안 ingredientId 중복 없음. 같은 재료를 여러 거래처에 넣는 것도 422.
-2. store를 잠근다. targetDate는 오늘 또는 내일이고 영업일이어야 한다. supplier/ingredient가 모두 이 가게 것인지 확인한다(아니면 404). 각 줄의 거래처는 그 재료의 최근 거래처(C03)이고 오늘이 주문 요일이어야 한다. 재료는 CORE여야 한다. 어긋나면 422.
+2. store를 잠근다. targetDate는 오늘 또는 내일이고 영업일이어야 한다. supplier/ingredient가 모두 이 가게 것인지 확인한다(아니면 404). 각 줄의 거래처는 그 재료의 최근 거래처(C03)이고 오늘이 주문 요일이어야 한다. 어긋나면 422.
 3. 0 수량 줄은 뺀다. 줄이 남지 않은 거래처가 있거나 전체가 비면 422. 단가를 몰라도 만들 수 있다.
 4. 거래처마다 purchase_order 1개와 줄(재료, 수량)을 저장한다. `total_amount`는 [C05](../domain/calculations.md) 금액 규칙(단가를 아는 줄만 합산, 하나도 없으면 null)으로 계산해 저장한다. 이후 단가가 바뀌어도 다시 계산하지 않는다.
 5. `message_text`를 [C07](../domain/calculations.md) 발주서 템플릿으로 만들어 저장한다.

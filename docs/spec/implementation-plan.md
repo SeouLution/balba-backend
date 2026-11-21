@@ -4,11 +4,11 @@
 
 | 단계 | 입력 문서 | 산출물 | 다음 단계로 가는 조건 |
 |---|---|---|---|
-| P0 계약 기반 | 범위, HTTP 규칙, `openapi.yaml` | DTO, 공통 오류, 가게 API 22개 라우트(미구현은 500), 계약 테스트 틀 | 22 operation이 `openapi.yaml`과 1:1 대응 |
+| P0 계약 기반 | 범위, HTTP 규칙, `openapi.yaml` | DTO, 공통 오류, 가게 API 20개 라우트(미구현은 500), 계약 테스트 틀 | 20 operation이 `openapi.yaml`과 1:1 대응 |
 | P1 인프라 | 아키텍처, 경계 타입, persistence, runtime | 설정, UoW, ORM/Alembic(ERD 전체 테이블), Clock(`DEMO_NOW`), FileStore, 정책 파일 로더 | 실제 PostgreSQL에서 migration·rollback 통과, 기존 health/spec/scalar 회귀 통과. `docs/spec/policy-defaults.toml`을 `app/policies/defaults.toml`로 옮김 |
 | P2 작업 루프 | jobs | `background_job` 큐, 작업 루프, 스케줄 등록, 외부 포트의 fake | 접수 후 재시작/재시도/DEAD/dedupe 및 시연 slot 1회 등록 검증 |
 | P3 가게·판매 | createStore, putPushToken, sales 3개, integrations(엑셀 읽기, 주소→좌표) | store, 엑셀 읽기, 판매 반영 | 같은 칸 다시 올리면 교체, COMPLETED와 후속 작업이 한 트랜잭션 |
-| P4 catalog·레시피 | candidates, core, recipes 2개, integrations(레시피 초안) | 재료·레시피 초안, 배지, 핵심 재료 선택, 레시피 저장 | LATER 레시피 보존, GENERATING 중 쓰기 422 |
+| P4 catalog·레시피 | recipes 2개, integrations(레시피 초안) | 재료·레시피 초안, 레시피 저장 | 메뉴별 레시피 전체 교체, GENERATING 중 쓰기 422 |
 | P5 영수증·거래처 | receipts 3개, suppliers 2개, integrations(영수증 읽기) | 영수증 읽기·확정, 입고·단가, 주문 요일 | 중복 입고 없음, 묶음 rollback, 확인된 전화·요일 보존 |
 | P6 예측·재고·발주 | calculations C01~C05, setProduction, getOrderPlan, integrations(날씨, 과거 날씨, 행사), jobs(예측 모델 계산) | 예측 모델 계산(FIT_FORECAST_MODEL), 예측·재고·발주 계산, `PlanOrder`, 날씨·행사 갱신 | F01·F02 fixture 통과 |
 | P7 재고 부족 안내 | C06·C07 LOW_STOCK 문구, P6 재고·예측 | `FindLowStock`, 홈 배너, NIGHT 푸시 문구 | F03 통과 |
@@ -32,7 +32,7 @@ docs/spec/00-scope-and-decisions.md의 결정 원장과 원본 해시를 확인�
 
 docs/spec/01-architecture.md, 02-boundary-contracts.md, 03-http-contract.md,
 domain/calculations.md, infrastructure/ 문서를 선행 기준으로 써.
-implementation-plan.md의 P0~P9 순서로 구현하고 endpoints/의 22개 operation을 모두 완성해.
+implementation-plan.md의 P0~P9 순서로 구현하고 endpoints/의 20개 operation을 모두 완성해.
 애플리케이션 코드, Alembic migration, 테스트, 실행 설정까지 구현해.
 
 프로세스는 uvicorn 1개야. 비동기 작업은 background_job 테이블과 API 프로세스 안의 작업 루프로 처리해.
@@ -70,17 +70,3 @@ openapi.yaml과 erd.dbml을 바꾸지 말고, 입력/출력/오류/원자성/재
 2. `openapi.yaml` 또는 `erd.dbml`을 먼저 고친다.
 3. [결정 원장](00-scope-and-decisions.md)에 항목을 추가하고 원본 해시를 갱신한다.
 4. 영향받는 엔드포인트·계산·검증 문서를 함께 고친다.
-
-## 2026-11-21 변경을 기존 구현에 반영하는 순서
-
-이미 구현된 코드에 D03, D39~D50을 반영할 때의 순서다.
-
-1. 계약: `openapi.yaml`에서 빠진 할인 3개 라우트·DTO·`discounts` 모듈·관련 테스트를 지우고 `HomeBanner.type`에 `LOW_STOCK`을 더한다.
-2. 저장 구조: 새 Alembic revision으로 `weather_observation`과 `store.forecast_model`을 만들고 `discount`, `menu.price`를 지운다.
-3. 정책 파일: [결정 문서의 변경 목록](00-scope-and-decisions.md)대로 값을 넣고 `[discount]`, `[menu_unit]`, 고정 날씨 계수 표를 지운다. 정책 로더와 그 값을 읽던 코드를 함께 고친다.
-4. 엑셀 읽기에서 금액 열과 판매가 갱신, 메뉴 단위 규칙을 지운다. 메뉴 수량 단위를 `인분`으로 고정한다(D46).
-5. 재료 단위를 `개`·`g`으로 통일한다(D47, D49, D50): 레시피 초안과 영수증 읽기의 AI 스키마, 구매 단위·환산 비율 제거, 재료 단위 단가, 발주 수량과 문구. 기존 데이터는 [저장 구조](infrastructure/persistence.md)의 규칙으로 옮긴다.
-6. 재고: 판매 기록이 없는 날의 추정을 지운다(C04). inventory가 forecasting을 읽지 않게 한다.
-7. 예측: 과거 날씨 adapter, `ForecastModelFitter`, FIT_FORECAST_MODEL 작업을 만들고 `ForecastCalculator`를 C02로 바꾼다. 판매 반영의 후속 작업을 FIT_FORECAST_MODEL로 바꾼다.
-8. 재고 부족: `FindLowStock`, 홈 LOW_STOCK 배너, NIGHT 푸시 문구(C06, C07).
-9. validation.md의 F01~F03, A01, A03, A05를 통과시킨다.

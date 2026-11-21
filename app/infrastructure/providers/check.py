@@ -13,6 +13,7 @@ import httpx
 
 from app.infrastructure.providers import real
 from app.infrastructure.providers.ports import GeoPoint
+from app.shared.policy import load_policy
 from app.shared.types import KST
 
 FIXTURES = Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "providers"
@@ -24,7 +25,7 @@ SAMPLE_ROWS = [["2026-11-19", "김밥", "3", "12000"], ["2026-11-19", "떡볶이
 
 async def check_claude(providers) -> str:
     detection = await providers.columns.detect_columns(SAMPLE_HEADER, SAMPLE_ROWS)
-    return f"열 판별 {detection.date}/{detection.menu_name}/{detection.quantity}/{detection.amount}"
+    return f"열 판별 {detection.date}/{detection.menu_name}/{detection.quantity}"
 
 
 async def check_kakao(providers) -> str:
@@ -60,6 +61,26 @@ async def check_kma(providers) -> str:
     return f"내일 시간별 예보 {len(day.hours)}건, 최고기온 {day.daily_max_c}"
 
 
+async def check_kma_observations(providers) -> str:
+    end = datetime.now(KST).date() - timedelta(days=1)
+    params = {
+        "serviceKey": environ["KMA_SERVICE_KEY"],
+        "pageNo": 1,
+        "numOfRows": 10,
+        "dataType": "XML",
+        "dataCd": "ASOS",
+        "dateCd": "DAY",
+        "startDt": (end - timedelta(days=6)).strftime("%Y%m%d"),
+        "endDt": end.strftime("%Y%m%d"),
+        "stnIds": load_policy().observation_station,
+    }
+    async with httpx.AsyncClient(timeout=real.HTTP_TIMEOUT) as client:
+        response = await real.get_with_retry(client, real.KMA_OBSERVATION_URL, params=params)
+    (FIXTURES / "kma_asos_daily_live.xml").write_text(response.text, encoding="utf-8")
+    observations = real.to_weather_observations(real.parse_kma_items(response.text)[0])
+    return f"지난 7일 관측 {len(observations)}건"
+
+
 async def check_seoul_events(providers) -> str:
     today = datetime.now(KST).date()
     return f"오늘 열리는 행사 {len(await providers.events.events_on(today))}건"
@@ -82,6 +103,7 @@ CHECKS = {
     "Claude API": check_claude,
     "카카오 주소 검색": check_kakao,
     "기상청 단기예보": check_kma,
+    "기상청 과거 관측": check_kma_observations,
     "서울 문화행사": check_seoul_events,
     "서울 도시데이터": check_seoul_crowd,
     "웹 푸시": check_push,
@@ -89,7 +111,7 @@ CHECKS = {
 
 
 async def main() -> int:
-    providers = real.real_providers(environ)
+    providers = real.real_providers(environ, load_policy().observation_station)
     failed = 0
     for name, check in CHECKS.items():
         try:

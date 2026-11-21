@@ -1,14 +1,14 @@
-"""29개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
+"""24개 operation. 검증된 입력을 유스케이스에 한 번 넘기고 결과를 응답으로 바꾼다."""
 
-from typing import Annotated, Literal
+from typing import Annotated
 
-from fastapi import APIRouter, Cookie, Depends, File, Query, Request, Response, UploadFile
+from fastapi import APIRouter, Cookie, Depends, File, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 
 from app.api import presenters
 from app.api import schemas as dto
 from app.bootstrap import Container
-from app.modules import accounts, catalog, discounts, forecasting, ordering, receipts, sales, stores, suppliers, views
+from app.modules import accounts, catalog, forecasting, ordering, receipts, sales, stores, suppliers, views
 from app.shared.types import DayHours, InternalFailure, parse_hhmm
 
 router = APIRouter(prefix="/v1")
@@ -97,17 +97,6 @@ async def put_push_token(storeId: str, body: dto.PushTokenIn, deps: Deps):
     return _empty()
 
 
-@router.get("/stores/{storeId}/ingredient-candidates", operation_id="listIngredientCandidates")
-async def list_ingredient_candidates(storeId: str, deps: Deps):
-    return _json(presenters.candidates(await catalog.list_candidates(deps, storeId)))
-
-
-@router.put("/stores/{storeId}/core-ingredients", operation_id="setCoreIngredients")
-async def set_core_ingredients(storeId: str, body: dto.CoreIngredientsIn, deps: Deps):
-    await catalog.set_core_ingredients(deps, storeId, body.ingredientIds)
-    return _empty()
-
-
 @router.get("/stores/{storeId}/recipes", operation_id="listRecipes")
 async def list_recipes(storeId: str, deps: Deps):
     return _json(presenters.recipes(await catalog.list_recipes(deps, storeId)))
@@ -186,8 +175,8 @@ async def record_sent(storeId: str, purchaseOrderId: str, body: dto.SendRecordIn
 
 
 @router.get("/stores/{storeId}/ingredients", operation_id="listIngredients")
-async def list_ingredients(storeId: str, deps: Deps, status: Literal["CORE", "LATER"] | None = None):
-    return _json(presenters.ingredient_list(await views.list_ingredients(deps, storeId, status)))
+async def list_ingredients(storeId: str, deps: Deps):
+    return _json(presenters.ingredient_list(await views.list_ingredients(deps, storeId)))
 
 
 @router.get("/stores/{storeId}/suppliers", operation_id="listSuppliers")
@@ -216,29 +205,3 @@ async def confirm_receipt_scan(storeId: str, scanId: str, deps: Deps, body: dto.
     answers = [(item.questionId, item.answer) for item in body.answers] if body else []
     await receipts.confirm_scan(deps, storeId, scanId, answers)
     return _empty()
-
-
-@router.get("/stores/{storeId}/discount-recommendations", operation_id="getDiscountRecommendations")
-async def get_discount_recommendations(storeId: str, deps: Deps):
-    return _json(presenters.discount_recommendations(await discounts.get_recommendations(deps, storeId)))
-
-
-@router.get("/stores/{storeId}/discounts", operation_id="listDiscounts")
-async def list_discounts(storeId: str, deps: Deps, range: Literal["TODAY", "THIS_WEEK", "ALL"] = "TODAY"):
-    return _json(presenters.discount_history(await discounts.list_discounts(deps, storeId, range), deps.policy))
-
-
-@router.post("/stores/{storeId}/discounts", operation_id="createDiscount")
-async def create_discount(
-    storeId: str, body: dto.DiscountCreateIn, deps: Deps, dryRun: Annotated[bool, Query()] = False
-):
-    payload = discounts.DiscountInput(
-        menu_id=body.menuId,
-        discount_type=body.discount.type,
-        discount_value=body.discount.value,
-        start_time=parse_hhmm(body.startTime),
-        quantity=body.quantity,
-        recommendation_id=body.recommendationId,
-    )
-    snapshot = await discounts.create_discount(deps, storeId, payload, dryRun)
-    return _json(presenters.discount(snapshot, deps.policy), 200 if dryRun else 201)

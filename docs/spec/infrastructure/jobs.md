@@ -41,7 +41,7 @@ PARSE/APPLY 작업이 DEAD면 getSalesImport는 500이다(D07). 클라이언트�
 
 `store.generation_status`는 GENERATING/READY다. createStore 직후는 GENERATING이고 아직 작업은 없다. 판매 반영이 끝날 때 레시피가 없는 메뉴가 있으면 GENERATING으로 두고 GENERATE_RECIPES를 등록한다. 없으면 READY로 바꾼다. 작업이 성공하면 재료·레시피 초안을 한 트랜잭션에 저장하고 READY로 바꾼다. 이미 레시피가 있는 메뉴는 다시 만들지 않는다.
 
-GENERATING 동안 setCoreIngredients와 saveRecipes는 422다. 작업이 DEAD면 candidates/recipes 조회는 500이다. 후보를 0개 만들어 READY로 두지 않는다.
+GENERATING 동안 saveRecipes는 422다. 작업이 DEAD면 recipes 조회는 500이다. 레시피 항목을 0개 만들어 READY로 두지 않는다.
 
 ## 영수증 상태
 

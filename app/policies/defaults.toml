@@ -1,10 +1,9 @@
-# SeouLution 정책 기본값 — AI 초안 (2026-11-19)
+# SeouLution 정책 기본값 — AI 초안 (2026-11-21)
 #
-# 이 파일의 숫자는 실측 근거가 없는 초안이다. 값을 바꾸려면 이 파일만 고친다.
-# 구현 P1에서 app/policies/defaults.toml 로 옮기고(복사본을 두지 않는다) 서버 시작 때 한 번 읽는다.
-# 계산 규칙은 domain/calculations.md, 이 값이 쓰이는 자리는 각 절의 주석에 적었다.
+# 이 파일의 숫자는 실측 근거가 없는 초안이다. 값을 바꾸려면 이 파일만 고친다. 서버 시작 때 한 번 읽는다.
+# 계산 규칙은 docs/spec/domain/calculations.md, 이 값이 쓰이는 자리는 각 절의 주석에 적었다.
 
-version = "draft-2026-11-19"
+version = "draft-2026-11-21"
 
 # ───────── 홈 (C01) ─────────
 [home]
@@ -20,84 +19,35 @@ event_radius_meters = 3000
 event_factor = 1.20
 # 서울 문화행사 중 근처 행사로 쓰는 분류. 분류 이름이 아래 값으로 시작하면 쓴다(축제는 '축제-문화/예술' 등 전부).
 # 교육/체험, 전시/미술, 영화, 기타는 상시 프로그램이 많아 뺀다.
-event_categories = ["축제", "콘서트", "클래식", "연극", "뮤지컬/오페라", "무용", "국악", "독주/독창회"]
+event_categories = ["축제", "콘서트"]
 
-# 날씨 계수: 대상일 예보 상태별로 곱한다. 여기 없는 상태는 1.00.
-[forecast.weather_factor]
-CLEAR = 1.00
-PARTLY_CLOUDY = 1.00
-CLOUDY = 1.00
-RAIN = 0.90
-SHOWER = 0.95
-SNOW = 0.85
-RAIN_SNOW = 0.85
+# 가게별 예측 모델(C02). 요일·날씨 경향은 그 가게의 판매 기록에서 구하고 가중치도 가게마다 정해진다.
+# 요일 경향을 쓰는 최소 학습일 수. 그 요일의 학습일이 이보다 적으면 1.0.
+min_weekday_days = 2
+# 날씨 구간 경향을 쓰는 최소 학습일 수. 그 구간의 학습일이 이보다 적으면 날씨 보정을 하지 않는다.
+min_bucket_days = 5
+# 기온 구간 경계(℃). [0, 10, 20, 28]이면 0 미만 / 0~10 / 10~20 / 20~28 / 28 이상의 5구간.
+temperature_bands = [0, 10, 20, 28]
+# 과거 날짜를 '비 온 날'로 보는 일 강수량(mm).
+wet_min_mm = 1.0
+# 날씨 경향 값의 허용 범위. 벗어나면 이 값으로 자른다.
+index_min = 0.5
+index_max = 1.5
+# 가중치를 조절하는 최소 학습일 수. 이보다 적으면 조절하지 않고 두 가중치를 1.0으로 둔다.
+fit_min_days = 56
+# 과거 날씨를 받는 기상청 종관(ASOS) 관측 지점 번호. 108은 서울.
+observation_station = "108"
 
-# 업종별로 위 값을 덮어쓴다. 적지 않은 업종 · 상태는 위 기본값을 쓴다.
-[forecast.weather_factor_by_category.GUKBAP]
-RAIN = 1.05
-SNOW = 1.05
-RAIN_SNOW = 1.05
-
-# ───────── 메뉴 단위 (판매 반영 때 신규 메뉴에 붙임) ─────────
-# 메뉴 이름에 keyword가 들어 있으면 그 단위. 위에서부터 먼저 맞는 것을 쓴다. 아무것도 안 맞으면 default.
-[menu_unit]
-default = "개"
-rules = [
-  { keyword = "김밥", unit = "줄" },
-  { keyword = "떡볶이", unit = "인분" },
-  { keyword = "덮밥", unit = "인분" },
-  { keyword = "볶음밥", unit = "인분" },
-  { keyword = "비빔밥", unit = "인분" },
-  { keyword = "국밥", unit = "인분" },
-  { keyword = "찌개", unit = "인분" },
-  { keyword = "탕", unit = "인분" },
-  { keyword = "국수", unit = "인분" },
-  { keyword = "라면", unit = "인분" },
-  { keyword = "우동", unit = "인분" },
-  { keyword = "돈까스", unit = "인분" },
-  { keyword = "정식", unit = "인분" },
-  { keyword = "백반", unit = "인분" },
-  { keyword = "순대", unit = "인분" },
-  { keyword = "튀김", unit = "인분" },
-]
-
-# ───────── 재료 배지 (1.4 핵심 재료 고르기) ─────────
-[tags]
-# 이름에 이 단어가 들어 있으면 '비쌈'. 1.4는 영수증을 찍기 전이라 단가가 아니라 이름으로 정한다.
-expensive_keywords = ["돼지고기", "소고기", "닭고기", "새우", "오징어", "낙지", "치즈", "버터", "참기름"]
-# 쓰이는 메뉴가 이 수 이상이거나 '비쌈'이면 '추천'.
-recommended_min_menus = 3
 
 # ───────── 거래처 (C03) ─────────
 [supplier]
 # 서로 다른 영수증 날짜가 이 수 이상이면 그 요일들을 주문 요일로 추정한다(ESTIMATED). 그 미만은 UNKNOWN.
 order_days_min_receipt_dates = 3
 
-# ───────── 할인 (C06) ─────────
-[discount]
-# 이 시각부터 할인 추천을 보여준다. 그 전에는 빈 목록.
-base_time = "17:00"
-# 추천 할인 폭(%).
-recommended_percent = 30
-# 추천 시작 시각 = 그날 마감 시각 − 이 분. 기준 시각보다 이르면 기준 시각으로 올린다.
-start_minutes_before_close = 120
-
-# 할인 채널: 이 순서 그대로 응답한다. launch_url이 빈 문자열이면 launchUrl=null.
-# 앱을 여는 주소는 확인하지 못해 비워 두었다. 주소를 확인하면 여기에 넣는다.
-[[discount.channels]]
-app = "BAEMIN"
-launch_url = ""
-supports_paste = false
-
-[[discount.channels]]
-app = "COUPANG_EATS"
-launch_url = ""
-supports_paste = false
-
-[[discount.channels]]
-app = "STORE_NOTICE"
-launch_url = ""
-supports_paste = true
+# ───────── 재고 부족 안내 (C06) ─────────
+[low_stock]
+# 재료의 재고가 앞으로 이 영업일 수 동안 쓸 양보다 적으면 알린다.
+days = 2
 
 # ───────── 업로드 한도 ─────────
 [upload]

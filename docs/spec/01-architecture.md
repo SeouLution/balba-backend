@@ -31,7 +31,7 @@ app/
   api/                            # 예외 변환, dependency, router 등록
   modules/
     stores/                       # store, push token, 좌표
-    catalog/                      # menu, ingredient, recipe, 후보/CORE
+    catalog/                      # menu, ingredient, recipe
     sales/                        # sales_import, daily_sales
     receipts/                     # receipt_scan, receipt_line 확정
     suppliers/                    # supplier, 주문 요일, 전화번호
@@ -91,7 +91,7 @@ tests/{unit,contract,integration,acceptance}/
 
 사용자 저장과 작업 결과가 서로 덮어쓰지 않게 하는 규칙은 두 가지뿐이다.
 
-1. 레시피 생성 중(`generation_status=GENERATING`)에는 setCoreIngredients와 saveRecipes를 422로 막는다.
+1. 레시피 생성 중(`generation_status=GENERATING`)에는 saveRecipes를 422로 막는다.
 2. 예측 작업은 `recommended`, `baseline`, `event_diff`, `summary_text`, `previous_recommended`만 쓴다. `adjusted`와 `produced`는 사용자 요청만 쓴다. `store.forecast_model`은 FIT_FORECAST_MODEL 작업만 쓴다.
 
 ## 데이터 변경 뒤의 후속 처리
@@ -105,4 +105,4 @@ tests/{unit,contract,integration,acceptance}/
 | 가게 생성 | GEOCODE_STORE |
 | 좌표 저장 완료 | 오늘·내일 REFRESH_CONTEXT |
 | 날씨·행사 갱신 완료 | 해당 날짜 GENERATE_FORECAST |
-| 준비량 PUT, 만든 양 PUT, CORE·레시피 저장, 영수증 확정, 주문 요일 저장, 발주 | 없음 (다음 조회에서 바로 반영) |
+| 준비량 PUT, 만든 양 PUT, 레시피 저장, 영수증 확정, 주문 요일 저장, 발주 | 없음 (다음 조회에서 바로 반영) |

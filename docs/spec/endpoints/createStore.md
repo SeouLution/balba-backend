@@ -35,4 +35,4 @@ store와 job은 함께 저장된다. 같은 POST는 새 가게를 만든다. 이
 
 - 7개 요일 정상/중복/누락, 전부 휴무, 심야 영업을 검증한다.
 - 외부 주소 실패에도 201, worker 복구 후 좌표만 반영된다.
-- 생성 직후 candidates는 GENERATING+빈 목록이다.
+- 생성 직후 recipes 조회는 GENERATING+빈 목록이다.

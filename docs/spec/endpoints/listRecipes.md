@@ -18,22 +18,22 @@
 
 | 성공 상태 | 응답 |
 |---|---|
-| 200 | `{ items: List<Recipe> }` |
+| 200 | `{ generationStatus: string, items: List<Recipe> }` |
 
 ## 책임과 경계
 
-catalog / `ListRecipes.execute(StoreId) → List<RecipeSnapshot>`. 1.6 화면용이며 **핵심(CORE) 재료 항목만** 준다(D21).
+catalog / `ListRecipes.execute(StoreId) → RecipeList{generationStatus,items}`. 1.6 화면용이며 메뉴의 모든 재료 항목을 준다(D52). 프론트는 `generationStatus`가 READY가 될 때까지 이 조회를 반복한다.
 
 ## 처리 순서
 
-1. store를 확인한다. 가장 최근 GENERATE_RECIPES 작업이 DEAD면 500. GENERATING이면 `items=[]`.
-2. 모든 메뉴를 menuId 순으로 돌려준다. 각 메뉴의 `items`는 그 메뉴 레시피 중 CORE 재료 항목만, ingredientId 순이다. CORE 재료 항목이 없는 메뉴도 `items=[]`로 포함한다.
+1. store를 확인한다. 가장 최근 GENERATE_RECIPES 작업이 DEAD면 500. GENERATING이면 `generationStatus=GENERATING`, `items=[]`다. 만들다 만 레시피를 내보내지 않는다. 엑셀을 올리기 전에도 같다.
+2. READY면 모든 메뉴를 menuId 순으로 돌려준다. 각 메뉴의 `items`는 그 메뉴 레시피의 모든 재료 항목이고 ingredientId 순이다. 재료 항목이 없는 메뉴도 `items=[]`로 포함한다.
 3. 각 항목의 quantity는 메뉴 1인분당 사용량이고 unit은 재료 단위(`개` 또는 `g`)다. 메뉴의 `unit`은 항상 `인분`이다(D46).
 
 ## 읽기·실패
 
-읽기 전용. LATER 재료의 레시피는 이 응답에 없지만 서버에 남아 있고 재고 계산에 쓰인다.
+읽기 전용. 같은 가게의 메뉴와 재료만 돌려준다.
 
 ## 완료 조건
 
-CORE만 반환, CORE를 바꾼 뒤 응답 변화, 메뉴/재료의 소속, 재료 단위(개·g)와 메뉴 단위(인분), 0 사용량, N+1 없는 조회를 검증한다.
+업로드 전/생성 중/완료/DEAD, 메뉴/재료의 소속, 재료 단위(개·g)와 메뉴 단위(인분), 0 사용량, N+1 없는 조회를 검증한다.

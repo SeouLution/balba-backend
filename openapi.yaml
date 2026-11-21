@@ -124,17 +124,17 @@ paths:
       responses:
         "204": { description: "저장됨" }
         default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/ingredient-candidates:
+  /stores/{storeId}/recipes:
     parameters:
       - $ref: "#/components/parameters/StoreId"
     get:
       tags: [1.0 시작하기]
-      operationId: listIngredientCandidates
-      summary: "1.4 핵심 재료 고르기"
-      description: "많이 쓰는 순으로 돌려줍니다. '추천만'은 프론트가 `tags`로 거릅니다."
+      operationId: listRecipes
+      summary: "1.6 레시피 초안"
+      description: "메뉴마다 레시피의 모든 재료 항목을 돌려줍니다."
       responses:
         "200":
-          description: "재료 후보"
+          description: "메뉴별 레시피"
           content:
             application/json:
               schema:
@@ -143,51 +143,8 @@ paths:
                 properties:
                   generationStatus:
                     type: string
-                    description: "AI 레시피 · 재료 후보 생성 상태(GENERATING이면 잠시 후 다시 조회)"
+                    description: "AI 레시피 초안 생성 상태(GENERATING이면 items가 비어 있고, 잠시 후 다시 조회)"
                     enum: [GENERATING, READY]
-                  items:
-                    type: array
-                    items: { $ref: "#/components/schemas/IngredientCandidate" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/core-ingredients:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-    put:
-      tags: [1.0 시작하기]
-      operationId: setCoreIngredients
-      summary: "1.4 핵심 재료 확정 ('N개로 시작하기')"
-      description: "고른 재료는 CORE, 나머지 후보는 LATER(나중에 추가)가 됩니다."
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [ingredientIds]
-              properties:
-                ingredientIds:
-                  type: array
-                  minItems: 1
-                  items: { type: string }
-      responses:
-        "204": { description: "저장됨" }
-        default: { $ref: "#/components/responses/Error" }
-  /stores/{storeId}/recipes:
-    parameters:
-      - $ref: "#/components/parameters/StoreId"
-    get:
-      tags: [1.0 시작하기]
-      operationId: listRecipes
-      summary: "1.6 레시피 초안"
-      responses:
-        "200":
-          description: "메뉴별 레시피"
-          content:
-            application/json:
-              schema:
-                type: object
-                required: [items]
-                properties:
                   items:
                     type: array
                     items: { $ref: "#/components/schemas/Recipe" }
@@ -196,6 +153,7 @@ paths:
       tags: [1.0 시작하기]
       operationId: saveRecipes
       summary: "1.6 '저장하고 홈으로'"
+      description: "요청에 담긴 메뉴마다 레시피 전체를 요청 내용으로 바꿉니다. 요청에 없는 메뉴는 그대로 둡니다."
       requestBody:
         required: true
         content:
@@ -418,11 +376,6 @@ paths:
       tags: [3.0 재료 · 영수증]
       operationId: listIngredients
       summary: "3.2 재료 탭"
-      parameters:
-        - name: status
-          in: query
-          description: "생략 시 CORE · LATER 전체"
-          schema: { type: string, enum: [CORE, LATER] }
       responses:
         "200":
           description: "재료 목록"
@@ -797,10 +750,6 @@ components:
                     quantity: { type: number, minimum: 0 }
 
     # ───────── 재료 ─────────
-    IngredientStatus:
-      type: string
-      description: "CORE 핵심(예측·발주 대상) · LATER 나중에 추가"
-      enum: [CORE, LATER]
     PriceInfo:
       type: object
       required: [unitPrice]
@@ -811,28 +760,12 @@ components:
             description: "재료 단위 1개(1개 또는 1g)당 원. 소수일 수 있음. 단가가 없으면 null",
             examples: [296.666667],
           }
-    IngredientCandidate:
-      type: object
-      description: "1.4에서 고를 재료 후보"
-      required: [id, name]
-      properties:
-        id: { type: string }
-        name: { type: string, examples: ["계란"] }
-        tags:
-          type: array
-          description: "배지 — 추천 · 비쌈"
-          items: { type: string, enum: [RECOMMENDED, EXPENSIVE] }
-        usedInMenus:
-          type: array
-          items: { $ref: "#/components/schemas/MenuRef" }
-        usedInMenuCount: { type: integer, examples: [6] }
     IngredientSummary:
       type: object
-      required: [id, name, status, unit]
+      required: [id, name, unit]
       properties:
         id: { type: string }
         name: { type: string, examples: ["계란"] }
-        status: { $ref: "#/components/schemas/IngredientStatus" }
         unit: { $ref: "#/components/schemas/IngredientUnit" }
         price:
           oneOf:
@@ -844,17 +777,11 @@ components:
             - type: "null"
     IngredientList:
       type: object
-      required: [items, counts]
+      required: [items]
       properties:
         items:
           type: array
           items: { $ref: "#/components/schemas/IngredientSummary" }
-        counts:
-          type: object
-          description: "탭 표시용 — 핵심 N · 나중에 추가 N"
-          properties:
-            core: { type: integer, examples: [6] }
-            later: { type: integer, examples: [4] }
 
     # ───────── 거래처 ─────────
     Supplier:
@@ -1000,7 +927,7 @@ components:
       properties:
         type:
           type: string
-          description: "FIRST_FORECAST 2.0-1 첫 예측 준비됨(X로 닫은 것은 프론트가 기억) · OVERNIGHT_CHANGE 2.2 밤사이 변경 · EVENT_TODAY 2.9 오늘 행사와 붐비는 시간 · DELIVERY_EXPECTED 2.9 어젯밤 발주 입고 예정 · LOW_STOCK 핵심 재료의 남은 재고가 앞으로 쓸 양보다 적음(title에 재료 이름, message에 발주 또는 영수증 올리기 안내)"
+          description: "FIRST_FORECAST 2.0-1 첫 예측 준비됨(X로 닫은 것은 프론트가 기억) · OVERNIGHT_CHANGE 2.2 밤사이 변경 · EVENT_TODAY 2.9 오늘 행사와 붐비는 시간 · DELIVERY_EXPECTED 2.9 어젯밤 발주 입고 예정 · LOW_STOCK 재료의 남은 재고가 앞으로 쓸 양보다 적음(title에 재료 이름, message에 발주 또는 영수증 올리기 안내)"
           enum: [FIRST_FORECAST, OVERNIGHT_CHANGE, EVENT_TODAY, DELIVERY_EXPECTED, LOW_STOCK]
         title: { type: string, examples: ["오늘 근처 축제 · 12:00 ~ 18:00"] }
         message:

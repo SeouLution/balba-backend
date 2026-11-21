@@ -10,6 +10,7 @@ from app.infrastructure.db.uow import UoW
 from app.modules import catalog, forecasting, inventory, receipts, stores, suppliers
 from app.shared import texts
 from app.shared.types import (
+    KST,
     InvalidRequest,
     NotFound,
     StoreContext,
@@ -21,6 +22,8 @@ from app.shared.types import (
     round_half_up,
 )
 
+LOW_STOCK_SEARCH_DAYS = 14
+
 
 @dataclass(frozen=True)
 class OrderPlanningLine:
@@ -29,7 +32,7 @@ class OrderPlanningLine:
     quantity: Decimal
     unit: str
     stock: Decimal | None
-    price: int | None
+    price: Decimal | None
     event_diff: Decimal
     product_name: str
 
@@ -57,12 +60,20 @@ class PurchaseOrderSnapshot:
 
 
 @dataclass(frozen=True)
+class LowStockItem:
+    ingredient: catalog.IngredientSnapshot
+    stock: Decimal
+    expected_usage: Decimal
+    ordered: bool
+
+
+@dataclass(frozen=True)
 class PurchaseOrderInput:
     target_date: date
     suppliers: tuple[tuple[str, tuple[tuple[str, Decimal], ...]], ...]
 
 
-def money_total(lines: list[tuple[Decimal, int | None]]) -> int | None:
+def money_total(lines: list[tuple[Decimal, Decimal | None]]) -> int | None:
     """단가를 아는 줄만 더한다. 단가를 아는 줄이 하나도 없으면 None."""
     known = [round_half_up(quantity * price) for quantity, price in lines if price is not None]
     return sum(known) if known else None
@@ -81,10 +92,7 @@ def plan(
     orderable = [
         item
         for item in catalog_snapshot.ingredients
-        if item.status == "CORE"
-        and item.convertible
-        and item.id in latest_purchase
-        and supplier_by_id[latest_purchase[item.id].supplier_id].orders_on(order_day)
+        if item.id in latest_purchase and supplier_by_id[latest_purchase[item.id].supplier_id].orders_on(order_day)
     ]
 
     def need(planned_by_menu: dict[str, Decimal], ingredient_id: str) -> Decimal:
@@ -97,10 +105,9 @@ def plan(
             Decimal(0),
         )
 
-    def packs(planned_by_menu: dict[str, Decimal], item: catalog.IngredientSnapshot) -> int:
+    def shortage(planned_by_menu: dict[str, Decimal], item: catalog.IngredientSnapshot) -> int:
         stock = stock_by_ingredient[item.id].stock or Decimal(0)
-        shortage = max(Decimal(0), need(planned_by_menu, item.id) - stock)
-        return ceil_int(shortage / item.content_quantity)
+        return ceil_int(max(Decimal(0), need(planned_by_menu, item.id) - stock))
 
     planned = {item.menu.id: item.planned for item in forecasts}
     planned_without_event = {item.menu.id: item.planned_without_event for item in forecasts}
@@ -109,20 +116,19 @@ def plan(
     lines, usual_lines = [], []
     for item in orderable:
         fact = latest_purchase[item.id]
-        quantity = packs(planned, item)
-        usual_lines.append((Decimal(packs(usual, item)), fact.unit_price))
+        quantity = shortage(planned, item)
+        usual_lines.append((Decimal(shortage(usual, item)), fact.unit_price))
         if quantity == 0:
             continue
-        stock = stock_by_ingredient[item.id].stock
         lines.append(
             OrderPlanningLine(
                 ingredient=item,
                 supplier=supplier_by_id[fact.supplier_id],
                 quantity=Decimal(quantity),
-                unit=item.purchase_unit,
-                stock=None if stock is None else stock / item.content_quantity,
+                unit=item.unit,
+                stock=stock_by_ingredient[item.id].stock,
                 price=fact.unit_price,
-                event_diff=Decimal(quantity - packs(planned_without_event, item)),
+                event_diff=Decimal(quantity - shortage(planned_without_event, item)),
                 product_name=fact.product_name,
             )
         )
@@ -154,6 +160,50 @@ async def plan_order(uow: UoW, deps: Container, ctx: StoreContext, target_date: 
         day_code(ctx.local_date),
         target_date,
     )
+
+
+async def find_low_stock(
+    uow: UoW, deps: Container, store: stores.StoreSnapshot, today: date, target_date: date
+) -> list[LowStockItem]:
+    days = [
+        day
+        for offset in range(LOW_STOCK_SEARCH_DAYS)
+        if not hours_for(store.business_hours, day := target_date + timedelta(days=offset)).closed
+    ][: deps.policy.low_stock_days]
+    quantities = await forecasting.expected_quantities(uow, store, days, deps.policy)
+    catalog_snapshot = await catalog.snapshot(uow, store.id)
+    stock_by_ingredient = await inventory.end_of(uow, store, today)
+    latest_purchase = await receipts.latest(uow, store.id)
+    sent_rows = (
+        await uow.execute(
+            select(purchase_order_line.c.ingredient_id, purchase_order.c.sent_at)
+            .join(purchase_order, purchase_order.c.id == purchase_order_line.c.purchase_order_id)
+            .join(supplier, supplier.c.id == purchase_order.c.supplier_id)
+            .where(supplier.c.store_id == store.id, purchase_order.c.sent_at.is_not(None))
+        )
+    ).all()
+    last_sent: dict[str, date] = {}
+    for row in sent_rows:
+        sent_on = row.sent_at.astimezone(KST).date()
+        last_sent[row.ingredient_id] = max(last_sent.get(row.ingredient_id, sent_on), sent_on)
+
+    items = []
+    for item in catalog_snapshot.ingredients:
+        stock = stock_by_ingredient[item.id].stock
+        expected = sum(
+            (
+                quantities[day].get(line.menu_id, Decimal(0)) * line.quantity
+                for day in days
+                for line in catalog_snapshot.recipe_lines
+                if line.ingredient_id == item.id
+            ),
+            Decimal(0),
+        )
+        if stock is None or stock >= expected:
+            continue
+        ordered = item.id in last_sent and last_sent[item.id] > latest_purchase[item.id].purchased_on
+        items.append(LowStockItem(item, stock, expected, ordered))
+    return sorted(items, key=lambda low: (low.stock / low.expected_usage, low.ingredient.id))
 
 
 def require_today_or_tomorrow(ctx: StoreContext, target_date: date) -> None:
@@ -210,7 +260,7 @@ async def create_purchase_orders(
             for ingredient_id, quantity in lines:
                 item = catalog_snapshot.ingredient_by_id[ingredient_id]
                 fact = latest_purchase.get(ingredient_id)
-                if item.status != "CORE" or not item.purchase_unit or fact is None or fact.supplier_id != supplier_id:
+                if fact is None or fact.supplier_id != supplier_id:
                     raise InvalidRequest("ingredient cannot be ordered from the supplier")
                 if quantity > 0:
                     kept.append((item, fact, quantity))
@@ -227,7 +277,7 @@ async def create_purchase_orders(
                         payload.target_date,
                         ctx.local_date,
                         target_hours.open.hour,
-                        [(fact.product_name, quantity, item.purchase_unit) for item, fact, quantity in kept],
+                        [(fact.product_name, quantity, item.unit) for item, fact, quantity in kept],
                     ),
                     total_amount=money_total([(quantity, fact.unit_price) for _, fact, quantity in kept]),
                     created_at=ctx.now,
@@ -313,7 +363,7 @@ async def sent_order_lines(uow: UoW, store_id: str, target_date: date) -> list[t
     """대상일에 쓰려고 보낸 발주서의 품목. 입고 예정 안내용이며 입고가 아니다."""
     rows = (
         await uow.execute(
-            select(ingredient.c.id, ingredient.c.name, ingredient.c.purchase_unit, purchase_order_line.c.quantity)
+            select(ingredient.c.id, ingredient.c.name, ingredient.c.unit, purchase_order_line.c.quantity)
             .join(purchase_order, purchase_order.c.id == purchase_order_line.c.purchase_order_id)
             .join(supplier, supplier.c.id == purchase_order.c.supplier_id)
             .join(ingredient, ingredient.c.id == purchase_order_line.c.ingredient_id)
@@ -327,6 +377,6 @@ async def sent_order_lines(uow: UoW, store_id: str, target_date: date) -> list[t
     ).all()
     totals: dict[str, tuple[str, Decimal, str]] = {}
     for row in rows:
-        name, quantity, unit = totals.get(row.id, (row.name, Decimal(0), row.purchase_unit or ""))
+        name, quantity, unit = totals.get(row.id, (row.name, Decimal(0), row.unit))
         totals[row.id] = (name, quantity + row.quantity, unit)
     return list(totals.values())

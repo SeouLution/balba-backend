@@ -34,6 +34,7 @@ class StoreSnapshot:
     generation_status: str
     first_forecast_at: datetime | None
     created_at: datetime
+    forecast_model: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -77,6 +78,7 @@ def _snapshot(row) -> StoreSnapshot:
         generation_status=row.generation_status,
         first_forecast_at=row.first_forecast_at,
         created_at=row.created_at,
+        forecast_model=row.forecast_model,
     )
 
 
