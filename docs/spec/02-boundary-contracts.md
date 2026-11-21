@@ -37,7 +37,7 @@
 |---|---|
 | StoreSnapshot | `id, name, category, roadAddress, businessHours:List<DayHours>, geoPoint:GeoPoint?, generationStatus, firstForecastAt:Instant?, createdAt` |
 | MenuSnapshot | `id, storeId, name, unit, price:Won?` |
-| IngredientSnapshot | `id, storeId, name, status:CORE\|LATER, usageUnit:UnitLabel?, purchaseUnitLabel:UnitLabel?, conversion:Conversion?, shelfLifeDays:int?, tags:List<Tag>` |
+| IngredientSnapshot | `id, storeId, name, status:CORE\|LATER, usageUnit:UnitLabel?, purchaseUnitLabel:UnitLabel?, conversion:Conversion?, tags:List<Tag>` |
 | RecipeSnapshot | `menu:MenuSnapshot, items:List<{ingredient:IngredientSnapshot, usagePerMenu:NonNegativeQty}>` |
 | CatalogSnapshot | `storeId, menus, ingredients, recipes` |
 | DailySale | `menuId, soldOn, quantity` |
@@ -45,15 +45,14 @@
 | SupplierSnapshot | `id, storeId, name, phone:string?, phoneConfirmed, phoneReadOn:LocalDate?, orderDays:List<DayOfWeek>, orderDaysStatus` |
 | ReceiptLot | `receiptLineId, ingredientId, supplierId, purchasedOn, purchaseQuantity:PositiveQty, unitPrice:Won?, productName` |
 | LatestPurchaseFact | `ingredientId, supplier:SupplierSnapshot, productName, unitPrice:Won?, purchasedOn, receiptLineId` |
-| InventorySnapshot | `ingredientId, asOf:LocalDate, stock:UsageQuantity?, remainingLots:List<{lot:ReceiptLot, remaining:UsageQuantity, expiresOn:LocalDate?}>` |
+| InventorySnapshot | `ingredientId, asOf:LocalDate, stock:UsageQuantity?` |
 | WeatherSnapshot | `storeId, targetDate, temperatureC, condition, summaryText, changeText:string?` |
 | NearbyEvent | `id, name, place:string?, distanceMeters:int, startAt, endAt, crowdLevel?, expectedVisitors:int?, peakFrom:LocalTime?, peakTo:LocalTime?, detailUrl:string?` |
 | ForecastSnapshot | `menu:MenuSnapshot, targetDate, baseline, recommended, adjusted:NonNegativeQty?, produced:NonNegativeQty?, eventDiff:SignedQty, previousRecommended:NonNegativeQty?, summaryText:string?` |
 | OrderPlanningLine | `ingredient, supplier, quantity:PurchaseQuantity, stock:PurchaseQuantity?, price:Won?, eventDiff:SignedQty, productName` |
-| OrderPlanSnapshot | `targetDate, lines:List<OrderPlanningLine>, events:List<NearbyEvent>, usualTotal:Won?, total:Won?, reducedIngredientIds:List<IngredientId>` |
+| OrderPlanSnapshot | `targetDate, lines:List<OrderPlanningLine>, events:List<NearbyEvent>, usualTotal:Won?, total:Won?` |
 | DiscountEvaluation | `menu, date, discount:{type,value}, startTime, quantity:PositiveQty, originalPrice:Won, discountedPrice:Won, wasteCostAvoided:Won?, revenueReduction:Won, promoText, channels` |
-| DiscountRecommendationsView | `date, baseTime, recommendations:List<{id, evaluation:DiscountEvaluation, expectedSavings:int, reasonText}>, surplusStock:List<{ingredient, quantity:UsageQuantity, wasteCost:Won?, mitigation}>` |
-| AlertSnapshot | `id, type:EXPIRY_IMMINENT\|PRICE_CHANGED, title, message:string?, actions:List<OPEN_DISCOUNTS>` |
+| DiscountRecommendationsView | `date, baseTime, recommendations:List<{id, evaluation:DiscountEvaluation, expectedSavings:int, reasonText}>` |
 | Policy | [정책 파일](../../app/policies/defaults.toml)을 읽은 불변 값. 계산 함수에 인자로 넘긴다. |
 
 `GeoPoint={latitude:float[-90,90], longitude:float[-180,180]}`.
@@ -72,7 +71,6 @@
 | sales / SalesReader | `read(StoreId, from, through) → SalesSnapshot` | 기간 안의 0과 기간 밖을 구분 |
 | receipts / ReceiptReader | `lots(StoreId, through) → List<ReceiptLot>` | 확정된 줄만, 날짜·id 순 |
 | receipts / PriceReader | `latest(StoreId, List<IngredientId>) → Map<IngredientId, LatestPurchaseFact?>` | 가장 최근 줄 하나에서 단가·거래처·품명을 함께 |
-| receipts / PriceReader | `previousPrice(StoreId, IngredientId) → Won?` | 단가 변동 알림용, 최근 두 번째 유효 단가 |
 | suppliers / SupplierReader | `list(StoreId) → List<SupplierSnapshot>` | id 순 |
 | suppliers / SupplierWriter | `resolve(UoW, StoreId, List<SupplierDraft>) → List<SupplierSnapshot>` | 이름으로 upsert, 확인된 전화·요일 보호 |
 | suppliers / SupplierWriter | `confirmPhone(UoW, SupplierId, phone) → void` | recordSent가 호출 |
@@ -85,13 +83,12 @@
 | inventory / InventoryReader | `endOf(StoreId, asOf:LocalDate) → List<InventorySnapshot>` | 위 입력을 모아 asOf 영업 종료 시점 재고를 계산. 재고를 읽는 모든 곳이 이것만 쓴다 |
 | ordering / PlanOrder | `execute(UoW, StoreContext, targetDate) → OrderPlanSnapshot` | 발주 계획의 유일한 진입점 |
 | ordering / OrderPlanner | `plan(catalog, forecasts, inventory, latestPurchase, suppliers, events, weekday, policy) → OrderPlanSnapshot` | IO 없음. PlanOrder 안에서만 호출 |
-| discounts / DiscountCalculator | `evaluate(DiscountInput, menu, catalog, inventory, latestPurchase, policy) → DiscountEvaluation` | IO 없음. dryRun과 실제 생성이 같이 씀 |
-| discounts / RecommendDiscounts | `execute(StoreContext) → DiscountRecommendationsView` | 조회할 때 계산(D25). 홈·재료 탭·할인 탭 모두 D28 적용 |
-| views / BuildAlerts | `execute(StoreContext) → List<AlertSnapshot>` | 알림의 유일한 진입점 |
+| discounts / DiscountCalculator | `evaluate(DiscountInput, menu, catalog, latestPurchase, policy) → DiscountEvaluation` | IO 없음. dryRun과 실제 생성이 같이 씀 |
+| discounts / RecommendDiscounts | `execute(StoreContext) → DiscountRecommendationsView` | 조회할 때 계산(D25). 오늘 예측의 추천 준비량과 만든 양을 쓴다(D37) |
 
-읽기 포트와 조합 유스케이스는 호출자가 연 UoW의 세션을 함께 쓴다. 쓰기 포트는 flush 후 같은 UoW에서 결과가 보이게 하고 최종 commit은 최상위 유스케이스에서 한다. `reducedIngredientIds`는 C05의 내부 계산 결과이며 공개 OrderPlan 필드에서 제외한다.
+읽기 포트와 조합 유스케이스는 호출자가 연 UoW의 세션을 함께 쓴다. 쓰기 포트는 flush 후 같은 UoW에서 결과가 보이게 하고 최종 commit은 최상위 유스케이스에서 한다.
 
-`MenuImportDraft={name, unit, price:Won?}`. `IngredientResolution={sourceKey, existingIngredientId 또는 newName, usageUnit?, conversion?, shelfLifeDays?}`. `SupplierDraft={sourceKey, name, phone?, purchasedOnDates}`. `DiscountInput`은 `DiscountCreate`를 검증한 내부 타입이다.
+`MenuImportDraft={name, unit, price:Won?}`. `IngredientResolution={sourceKey, existingIngredientId 또는 newName, usageUnit?, conversion?}`. `SupplierDraft={sourceKey, name, phone?, purchasedOnDates}`. `DiscountInput`은 `DiscountCreate`를 검증한 내부 타입이다.
 
 ## 작업 payload
 

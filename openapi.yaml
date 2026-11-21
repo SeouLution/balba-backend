@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: "SeouLution API"
-  version: 0.4.0-draft
+  version: 0.5.0-draft
   description: |
     Figma `SeouLution 와이어프래임`의 '시연시 보여줄 화면'(node 1:2) 중 '후순위'로 덮인 화면을 제외한 화면에 **꼭 필요한 API만** 정의합니다.
     버튼만 있고 화면이 그려지지 않은 기능(POS 컴퓨터에서 올리기 · 칸 고치기 · 재료 상세 · 재료 직접 추가 · 전체 메뉴 예측 보기 · 지난 발주서 다시 열기 · 배달앱 선택 · 마감할인 등록 방법)과 후순위 기능(붐비는 시간 맞추기 · 앱 등록 확인)은 넣지 않습니다.
@@ -212,7 +212,7 @@ paths:
       tags: [2.0 홈]
       operationId: getHome
       summary: "2.0-1 온보딩 직후 · 2.2 당일 아침 · 2.7-1 행사 펼친 상태 · 2.9 행사 당일 아침"
-      description: "날씨 · 근처 행사 · 예측 상위 3개 · 발주 요약 · 주의할 것을 한 번에 내려줍니다. 전날 밤 화면과 당일 아침 화면 중 무엇을 그릴지는 `view`로 내려주며, 한국 시각 00:00부터 20:00 전까지는 TODAY(오늘), 20:00부터 자정 전까지는 TOMORROW(내일)입니다."
+      description: "날씨 · 근처 행사 · 예측 상위 3개 · 발주 요약을 한 번에 내려줍니다. 전날 밤 화면과 당일 아침 화면 중 무엇을 그릴지는 `view`로 내려주며, 한국 시각 00:00부터 20:00 전까지는 TODAY(오늘), 20:00부터 자정 전까지는 TOMORROW(내일)입니다."
       responses:
         "200":
           description: "홈"
@@ -492,7 +492,7 @@ paths:
       summary: "4.0 할인 탭 상단 카드 · 4.0-2 할인 추천 목록"
       responses:
         "200":
-          description: "할인 추천 · 남을 재고"
+          description: "할인 추천"
           content:
             application/json:
               schema: { $ref: "#/components/schemas/DiscountRecommendations" }
@@ -823,9 +823,8 @@ components:
         name: { type: string, examples: ["계란"] }
         tags:
           type: array
-          description: "배지 — 추천 · 유통기한 짧음 · 비쌈"
-          items:
-            { type: string, enum: [RECOMMENDED, SHORT_SHELF_LIFE, EXPENSIVE] }
+          description: "배지 — 추천 · 비쌈"
+          items: { type: string, enum: [RECOMMENDED, EXPENSIVE] }
         usedInMenus:
           type: array
           items: { $ref: "#/components/schemas/MenuRef" }
@@ -863,10 +862,6 @@ components:
           properties:
             core: { type: integer, examples: [6] }
             later: { type: integer, examples: [4] }
-        notices:
-          type: array
-          description: "재료 탭 안내(단가 10% 이상 변동 등)"
-          items: { $ref: "#/components/schemas/Alert" }
 
     # ───────── 거래처 ─────────
     Supplier:
@@ -1034,7 +1029,7 @@ components:
     Home:
       type: object
       required:
-        [storeName, view, targetDate, tiles, banners, forecast, cautions]
+        [storeName, view, targetDate, tiles, banners, forecast]
       properties:
         storeName: { type: string, examples: ["행복분식"] }
         view: { $ref: "#/components/schemas/HomeView" }
@@ -1064,10 +1059,6 @@ components:
           oneOf:
             - $ref: "#/components/schemas/OrderPlanSummary"
             - type: "null"
-        cautions:
-          type: array
-          description: "주의할 것"
-          items: { $ref: "#/components/schemas/Alert" }
 
     # ───────── 예측 ─────────
     ForecastItem:
@@ -1246,30 +1237,23 @@ components:
         unit: { type: string, examples: ["인분"] }
         discount: { $ref: "#/components/schemas/DiscountValue" }
         startTime: { $ref: "#/components/schemas/LocalTime" }
-        quantity: { type: number, examples: [5] }
-        reasonText: { type: string, examples: ["어묵이 많이 들어가요"] }
+        quantity:
+          {
+            type: number,
+            description: "추천 준비량보다 더 만든 수량",
+            examples: [5],
+          }
+        reasonText: { type: string, examples: ["예상보다 5인분 더 만들었어요"] }
         expectedSavings: { type: integer }
-    SurplusStockItem:
-      type: object
-      required: [ingredient, quantity]
-      properties:
-        ingredient: { $ref: "#/components/schemas/IngredientRef" }
-        quantity: { $ref: "#/components/schemas/Quantity" }
-        wasteCost: { type: [integer, "null"], examples: [9000] }
-        mitigation:
-          { type: string, enum: [DISCOUNT_RECOMMENDED, ORDER_REDUCED, NONE] }
     DiscountRecommendations:
       type: object
-      required: [date, baseTime, recommendations, surplusStock]
+      required: [date, baseTime, recommendations]
       properties:
         date: { type: string, format: date }
         baseTime: { $ref: "#/components/schemas/LocalTime" }
         recommendations:
           type: array
           items: { $ref: "#/components/schemas/DiscountRecommendation" }
-        surplusStock:
-          type: array
-          items: { $ref: "#/components/schemas/SurplusStockItem" }
     DiscountCreate:
       type: object
       required: [menuId, discount, startTime, quantity]
@@ -1313,7 +1297,7 @@ components:
         wasteCostAvoided:
           {
             type: integer,
-            description: "버릴 원가. 기대 절감 = wasteCostAvoided − revenueReduction",
+            description: "할인 수량을 만드는 데 든 재료 원가(안 팔리면 버릴 원가). 기대 절감 = wasteCostAvoided − revenueReduction",
             examples: [9000],
           }
         revenueReduction:
@@ -1336,26 +1320,3 @@ components:
           type: array
           description: "최신순. 날짜별 묶음은 프론트가 `date`로 만듭니다"
           items: { $ref: "#/components/schemas/Discount" }
-    # ───────── 알림 ─────────
-    Alert:
-      type: object
-      required: [id, type, title]
-      properties:
-        id: { type: string }
-        type:
-          type: string
-          enum: [EXPIRY_IMMINENT, PRICE_CHANGED]
-        title:
-          { type: string, examples: ["어묵 오늘까지 · 할인 추천이 있어요"] }
-        message:
-          {
-            type: string,
-            examples: ["계란 단가가 7,900원 → 8,900원으로 올랐어요 (+13%)"],
-          }
-        actions:
-          type: array
-          items:
-            type: object
-            required: [type]
-            properties:
-              type: { type: string, enum: [OPEN_DISCOUNTS] }

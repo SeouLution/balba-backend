@@ -11,8 +11,8 @@
 | P4 catalog·레시피 | candidates, core, recipes 2개, integrations(레시피 초안) | 재료·레시피 초안, 배지, 핵심 재료 선택, 레시피 저장 | LATER 레시피 보존, GENERATING 중 쓰기 422 |
 | P5 영수증·거래처 | receipts 3개, suppliers 2개, integrations(영수증 읽기) | 영수증 읽기·확정, 입고·단가, 주문 요일 | 중복 입고 없음, 묶음 rollback, 확인된 전화·요일 보존 |
 | P6 예측·재고·발주 | calculations C01~C05, setProduction, getOrderPlan, integrations(날씨, 행사) | 예측·재고·발주 계산, `PlanOrder`, 날씨·행사 갱신 | F01·F02 fixture 통과 |
-| P7 할인 | C06·C07 할인 문구, discounts 3개, P6 PlanOrder | 추천 계산, preview/생성/이력 | F03 통과, GET 추천을 그대로 preview 가능, ORDER_REDUCED가 P6 결과와 일치 |
-| P8 화면 조합·발주서 | getHome, adjustForecast, listIngredients, purchaseOrders 2개, recordSent, C07, P7 추천 | `views` 유스케이스, 알림, 발주서 문구, 전송 기록 | 홈·준비량 조정·발주가 P6 계산을 공유하고 홈·재료 탭의 할인 안내는 P7 결과와 일치 |
+| P7 할인 | C06·C07 할인 문구, discounts 3개, P6 PlanOrder | 추천 계산, preview/생성/이력 | F03 통과, GET 추천을 그대로 preview 가능 |
+| P8 화면 조합·발주서 | getHome, adjustForecast, listIngredients, purchaseOrders 2개, recordSent, C07, P7 추천 | `views` 유스케이스, 발주서 문구, 전송 기록 | 홈·준비량 조정·발주가 P6 계산을 공유 |
 | P9 실연동·운영 | integrations, runtime, validation | 실제 adapter 6종과 응답 fixture, 푸시, Dockerfile·배포 변경 목록 | 전체 인수 조건 통과, 실제 키로 각 공급자 1회 이상 호출 확인 |
 
 P3~P8은 외부 포트를 fake로 두고 진행할 수 있다. 실제 adapter는 P9에서 붙이되, 키가 없어 호출해 보지 못한 공급자를 완료로 보고하지 않는다.
@@ -36,7 +36,7 @@ implementation-plan.md의 P0~P9 순서로 구현하고 endpoints/의 25개 opera
 애플리케이션 코드, Alembic migration, 테스트, 실행 설정까지 구현해.
 
 프로세스는 uvicorn 1개야. 비동기 작업은 background_job 테이블과 API 프로세스 안의 작업 루프로 처리해.
-발주 계획은 ordering.PlanOrder, 재고는 inventory.InventoryReader, 알림은 views.BuildAlerts 한 곳에서만 계산해.
+발주 계획은 ordering.PlanOrder, 재고는 inventory.InventoryReader 한 곳에서만 계산해.
 서버가 만드는 문장은 calculations.md C07의 템플릿만 써.
 
 외부 연동은 integrations.md의 공급자를 실제로 붙여. 요청·응답 필드는 공식 문서를 확인하고,

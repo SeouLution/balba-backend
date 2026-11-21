@@ -48,9 +48,8 @@ baseline 58.25, 행사 1.2 → recommended=70, diff=roundHalfUp(11.75)=12, summa
 - 11/10은 판매 기록이 없고 예측 행이 있다. produced=null, planned=10 → 11/10 끝 재고 5개. produced=12를 기록하면 3개.
 - 11/10에 예측 행도 없으면 지난 4주 화요일 판매 평균을 쓴다. 그 표본도 없으면 stock=null.
 - 사용량이 재고보다 많은 날은 재고 0으로 두고 다음 날로 넘어간다.
-- 계란 유통기한 21일이면 11/8 입고분의 추정 기한은 11/28이다.
 
-발주: 쓸 수 있는 재고 15개, 계획 75줄 → 부족 60개 → 2판. 행사 없는 준비량 60줄이면 부족 45개 → 2판, eventDiff=0. stock=null이면 75개 전체 → 3판. 1판 8,900원 → 2판 17,800원.
+발주: 재고 15개, 계획 75줄 → 부족 60개 → 2판. 행사 없는 준비량 60줄이면 부족 45개 → 2판, eventDiff=0. stock=null이면 75개 전체 → 3판. 1판 8,900원 → 2판 17,800원.
 
 금액: 줄 3개 중 단가를 아는 줄이 2개면 합계는 그 2개의 합이다. 하나도 모르면 null. 줄이 없으면 `suppliers=[]`, `Home.order=null`.
 
@@ -64,13 +63,13 @@ baseline 58.25, 행사 1.2 → recommended=70, diff=roundHalfUp(11.75)=12, summa
 
 ### F03 할인
 
-판매가 5,000원, 10%, 5개 → 할인가 4,500원, revenueReduction 2,500원. 소진되는 임박 lot 원가 9,000원 → expectedSavings 6,500원.
+판매가 5,000원, 10%, 5개 → 할인가 4,500원, revenueReduction 2,500원. 메뉴 1단위 재료 원가 1,800원 → wasteCostAvoided 9,000원, expectedSavings 6,500원.
 
-임박 재료의 단가를 모르면 수동 할인은 만들 수 있고 응답에 `wasteCostAvoided` 키가 없다. 추천 후보에서는 빠진다.
+추천 수량(D37): 추천 준비량 50, produced=null, planned=50이면 추천이 없다. produced=55를 기록하면 quantity=5다. produced=null이고 adjusted=58이면 quantity=8이다. produced=0을 기록하면 adjusted와 무관하게 추천이 없다.
 
-떡볶이와 어묵탕이 같은 임박 어묵을 쓰면, 먼저 고른 메뉴가 쓴 만큼을 빼고 둘째 메뉴를 계산한다. 두 추천의 wasteCostAvoided 합이 어묵 임박 재고의 원가를 넘지 않는다.
+재료 원가(D33): 레시피 재료 3개 중 단가와 환산 비율을 아는 재료가 2개면 그 2개만 더한다. 하나도 모르면 수동 할인은 만들 수 있고 응답에 `wasteCostAvoided` 키가 없다. 추천 후보에서는 빠진다. 기대 절감이 0 이하인 후보도 빠진다.
 
-16:59 요청은 빈 목록, 17:00 요청은 계산 결과다. 마감 21:00이면 추천 시작은 19:00이다. 16시 마감 가게의 17시 조회는 추천이 없고, 심야 마감은 익일 시각으로 비교한다. 사용량 0인 임박 재료만 있는 메뉴는 후보에서 빠진다.
+16:59 요청은 빈 목록, 17:00 요청은 계산 결과다. 마감 21:00이면 추천 시작은 19:00이다. 16시 마감 가게의 17시 조회는 추천이 없고, 심야 마감은 익일 시각으로 비교한다.
 
 ## 인수 흐름
 
@@ -81,7 +80,7 @@ baseline 58.25, 행사 1.2 → recommended=70, diff=roundHalfUp(11.75)=12, summa
 3. confirm 202 → APPLY_SALES → COMPLETED. confirm을 반복해도 판매합이 같다.
 4. GENERATE_RECIPES 완료 → candidates READY(배지 포함) → CORE 확정 204.
 5. 영수증을 건너뛰고 recipes GET(핵심 재료 항목만) / PUT.
-6. NIGHT 예측 완료 후 20:00 이후 홈 200: 예측 있음, FIRST_FORECAST 배너, `order=null`(거래처 없음), cautions=[].
+6. NIGHT 예측 완료 후 20:00 이후 홈 200: 예측 있음, FIRST_FORECAST 배너, `order=null`(거래처 없음).
 
 ### A02 영수증과 발주
 
@@ -98,10 +97,9 @@ baseline 58.25, 행사 1.2 → recommended=70, diff=roundHalfUp(11.75)=12, summa
 
 1. 자정이 지나면 홈이 TODAY, targetDate 오늘. 어젯밤 보낸 발주서가 있으면 DELIVERY_EXPECTED에 품목이 나열된다.
 2. produced PUT 204 → 홈에 반영되고 daily_sales는 그대로다.
-3. 추정 기한이 오늘인 재고가 남으면 cautions에 EXPIRY_IMMINENT가 나온다.
-4. 17:00 이후 추천 조회 200: recommendations와 surplusStock이 나온다. 조회 전후로 DB 행 수가 같다.
-5. dryRun 200 전후로 discount 행 수가 같다. 실제 생성 201 뒤 이력에 정확히 1건이 늘어난다.
-6. 다음 날 menu.price가 바뀌어도 과거 Discount의 originalPrice/discountedPrice/promoText는 그대로다.
+3. 17:00 이후 추천 조회 200: 추천 준비량보다 더 만든 메뉴가 recommendations에 나온다. 조회 전후로 DB 행 수가 같다.
+4. dryRun 200 전후로 discount 행 수가 같다. 실제 생성 201 뒤 이력에 정확히 1건이 늘어난다.
+5. 다음 날 menu.price가 바뀌어도 과거 Discount의 originalPrice/discountedPrice/promoText는 그대로다.
 
 ### A04 실패와 복구
 
@@ -111,9 +109,8 @@ baseline 58.25, 행사 1.2 → recommended=70, diff=roundHalfUp(11.75)=12, summa
 
 | 시작 상태와 행동 | 기대 결과 |
 |---|---|
-| 오늘 만료 재료로 추천 가능한 가게에서 16:59와 17:00에 홈·재료 탭·할인 목록 조회 | 16:59에는 만료 안내만 있고 이동 버튼·추천 문구·목록은 비어 있다. 17:00에는 실제 추천에 쓰인 재료의 안내에만 문구·버튼이 있다. |
-| 내일 계란 32개 필요, 1판=30개, 주문 가능. 내일 만료 lot의 잔량이 1개 또는 2개이고 다른 재고는 0 | 1개면 2판→2판으로 NONE, 2개면 2판→1판으로 ORDER_REDUCED. 주문 요일이 아니면 두 경우 모두 NONE. |
-| 할인 GET에 표시된 각 추천의 ID·메뉴·폭·시작 시각·수량을 같은 데이터로 dryRun | 모두 200. 각 응답의 버릴 원가 − 덜 받는 금액은 해당 카드의 기대 절감과 같다. 같은 재료를 나눠 쓰는 둘째 추천도 확인한다. 할인 이력은 그대로다. |
+| 추천 준비량 50인 메뉴에 produced=55를 기록하고 16:59와 17:00에 할인 목록 조회 | 16:59에는 빈 목록이다. 17:00에는 수량 5인 추천 1건이 나온다(판매가와 재료 원가를 알고 기대 절감이 양수인 경우). |
+| 할인 GET에 표시된 각 추천의 ID·메뉴·폭·시작 시각·수량을 같은 데이터로 dryRun | 모두 200. 각 응답의 버릴 원가 − 덜 받는 금액은 해당 카드의 기대 절감과 같다. 할인 이력은 그대로다. |
 | 전날 밤 행사에 장소와 혼잡도 정보가 없고 그 행사가 발주 계수에 반영됨 | 홈·발주 상세 모두 200. 양쪽 EventSummary에서 place·crowdLevel 키가 생략된다. |
 | 같은 대상일의 NIGHT 추천 50, MORNING 작업 지연, 07:30 푸시 작업 실행 | 밤 수량을 보내지 않고 대기한다. 대기 기한 안에 아침 추천 48로 성공하면 푸시 문구는 48, 홈의 previousRecommended는 50이다. |
 | 같은 import를 여러 번 확정 | 판매와 최초 후속 작업은 한 번만 반영된다. |

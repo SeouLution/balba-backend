@@ -29,7 +29,7 @@ catalog / `SetCoreIngredients.execute(StoreContext, selected:List<IngredientId>)
 1. 길이≥1, 중복 ID 없음. store를 잠그고 `generation_status=READY`인지 확인한다. GENERATING이면 422.
 2. 전달된 ID가 모두 이 가게의 재료인지 확인한다. 하나라도 없거나 다른 가게 것이면 404이고 아무것도 바꾸지 않는다.
 3. 선택된 재료는 CORE, 이 가게의 나머지 재료는 모두 LATER로 바꾼다. recipe_item은 지우지 않는다.
-4. commit 후 204. 같은 집합을 순서만 바꿔 다시 보내도 결과가 같다. 발주·알림은 조회할 때 계산하므로 따로 갱신할 것이 없다.
+4. commit 후 204. 같은 집합을 순서만 바꿔 다시 보내도 결과가 같다. 발주는 조회할 때 계산하므로 따로 갱신할 것이 없다.
 
 ## 완료 조건
 

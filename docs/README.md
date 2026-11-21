@@ -9,7 +9,7 @@
 1. [출처·범위·설계 결정](spec/00-scope-and-decisions.md): 결정 원장과 Figma 대조 결과.
 2. [전체 아키텍처](spec/01-architecture.md): 실행 구조, 모듈 소유권, 의존 방향.
 3. [공통 타입·포트](spec/02-boundary-contracts.md), [HTTP 규칙](spec/03-http-contract.md).
-4. [정책 기본값](../app/policies/defaults.toml): 계수, 유통기한, 메뉴 단위, 할인 기본값. AI 초안이며 이 파일만 고치면 된다.
+4. [정책 기본값](../app/policies/defaults.toml): 계수, 메뉴 단위, 재료 배지, 할인 기본값. AI 초안이며 이 파일만 고치면 된다.
 5. [계산 규칙·문장 템플릿](spec/domain/calculations.md).
 6. [DB](spec/infrastructure/persistence.md), [비동기 작업](spec/infrastructure/jobs.md), [외부 연동](spec/infrastructure/integrations.md), [실행·운영](spec/infrastructure/runtime.md).
 7. [엔드포인트별 명세](spec/endpoints/README.md).
@@ -20,9 +20,9 @@
 - 공개 DTO의 이름·필드·필수 여부·nullable·상태 코드는 OpenAPI를 따른다. 내부 타입은 공개 DTO와 분리한다.
 - 결정 원장의 `USER`는 사용자가 정한 것, `DESIGN`은 이 문서가 고른 기본값이다. 둘 다 구현 기준이다. 같은 원장의 ‘미정인 정책’은 결정 전까지 구현 기준에서 제외한다.
 - 다른 모듈의 ORM 객체·세션·임의 JSON을 넘기지 않는다. 모듈 경계에는 명명된 불변 타입과 포트만 쓴다.
-- 발주 계획, 재고, 알림은 각각 한 곳에서만 계산한다([아키텍처](spec/01-architecture.md)).
+- 발주 계획과 재고는 각각 한 곳에서만 계산한다([아키텍처](spec/01-architecture.md)).
 - 각 엔드포인트 문서의 검증, 처리 순서, 원자성, 재요청, 실패, 완료 조건을 함께 구현한다. 성공 경로만 만드는 것은 완료가 아니다.
-- 모르는 재고·가격·유통기한을 0이나 임의 숫자로 채우지 않는다.
+- 모르는 재고·가격을 0이나 임의 숫자로 채우지 않는다.
 - 구현을 시작할 때 원본 해시를 확인한다. 달라졌으면 영향받는 문서를 먼저 고친다.
 
 ## 현재 상태

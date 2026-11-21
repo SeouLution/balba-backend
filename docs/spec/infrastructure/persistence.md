@@ -6,7 +6,7 @@ PostgreSQL, SQLAlchemy 2.x async, Alembic을 쓴다. 버전은 구현 시 Python
 
 **저장 구조의 기준은 [erd.dbml](../../erd.dbml) 하나다.** 이 스펙은 ERD에 없는 테이블·컬럼을 쓰지 않는다. 구현 중 더 필요해지면 ERD를 먼저 고치고 [결정 원장](../00-scope-and-decisions.md)에 적는다.
 
-ERD의 text ID, composite PK, 날짜/timestamptz, nullable을 그대로 따른다. json은 JSONB, 수량은 numeric(18,6), 금액은 bigint로 만든다. enum note는 CHECK 제약으로 만든다. 좌표 범위, 0 이상 수량·가격, `content_quantity>0`, `shelf_life_days>0`에도 CHECK를 둔다.
+ERD의 text ID, composite PK, 날짜/timestamptz, nullable을 그대로 따른다. json은 JSONB, 수량은 numeric(18,6), 금액은 bigint로 만든다. enum note는 CHECK 제약으로 만든다. 좌표 범위, 0 이상 수량·가격, `content_quantity>0`에도 CHECK를 둔다.
 
 ## 테이블별 소유와 불변식
 

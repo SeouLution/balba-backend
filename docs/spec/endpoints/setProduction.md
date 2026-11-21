@@ -34,7 +34,7 @@ forecasting / `SetProduction.execute(StoreContext, date, menuId, quantity:NonNeg
 
 ## 재고에 미치는 영향
 
-판매 기록이 없는 날의 재료 사용량은 만든 양으로 계산한다([C04](../domain/calculations.md), D03). 그래서 이 값은 다음 조회부터 재고, 발주의 stock, 유통기한 알림, 할인 추천에 반영된다. 기록하지 않으면 최종 준비량(planned)을 만든 것으로 본다.
+판매 기록이 없는 날의 재료 사용량은 만든 양으로 계산한다([C04](../domain/calculations.md), D03). 그래서 이 값은 다음 조회부터 재고와 발주의 stock에 반영된다. 할인 추천 수량도 이 값에서 추천 준비량을 뺀 값이다([C06](../domain/calculations.md), D37). 기록하지 않으면 최종 준비량(planned)을 만든 것으로 본다.
 
 ## 실패·재요청
 

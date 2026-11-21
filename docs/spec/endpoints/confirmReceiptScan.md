@@ -43,4 +43,4 @@ receipts / `ConfirmReceiptScan.execute(StoreContext, ScanId, answers:List<{quest
 
 ## 완료 조건
 
-SAME/DIFFERENT, 생략 가능한 body, 모든 질문에 답해야 하는 것, 다른 scan의 질문, 두 번 confirm해도 입고 1회, 다른 scan으로 같은 영수증을 올린 경우, 같은 거래처·같은 날짜에 품목이 다른 두 영수증이 모두 반영되는 것, 구매 단위가 다른 줄 제외, 확인된 전화·요일 보존, 확정 뒤 재고·발주·알림 조회에 입고가 반영되는 것을 검증한다.
+SAME/DIFFERENT, 생략 가능한 body, 모든 질문에 답해야 하는 것, 다른 scan의 질문, 두 번 confirm해도 입고 1회, 다른 scan으로 같은 영수증을 올린 경우, 같은 거래처·같은 날짜에 품목이 다른 두 영수증이 모두 반영되는 것, 구매 단위가 다른 줄 제외, 확인된 전화·요일 보존, 확정 뒤 재고·발주 조회에 입고가 반영되는 것을 검증한다.

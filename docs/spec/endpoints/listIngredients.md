@@ -23,7 +23,7 @@
 
 ## 책임과 경계
 
-views / `ListIngredients.execute(StoreContext, status:CORE|LATER?) → IngredientListView`. 재료(catalog), 최근 단가·거래처(receipts PriceReader), 알림(`views.BuildAlerts`)을 조합한다. catalog가 receipts를 읽지 않게 조합을 views에 둔다.
+views / `ListIngredients.execute(StoreContext, status:CORE|LATER?) → IngredientListView`. 재료(catalog), 최근 단가·거래처(receipts PriceReader)를 조합한다. catalog가 receipts를 읽지 않게 조합을 views에 둔다.
 
 ## 처리 순서
 
@@ -31,9 +31,8 @@ views / `ListIngredients.execute(StoreContext, status:CORE|LATER?) → Ingredien
 2. status가 있으면 items만 거른다. 정렬은 CORE 먼저, 그 안에서 쓰이는 메뉴 수 내림차순, ingredientId 순(1.4 후보와 같은 순서).
 3. `usageUnit`을 모르면 키를 생략한다. 구매 단위 이름이 없으면 `purchaseUnit=null`, 이름은 있고 환산 비율이 없으면 `{label, contentQuantity:null}`. 영수증 전에는 레시피 초안이 추정한 값이 들어 있다.
 4. 확정된 영수증 줄이 없는 재료는 `price=null`, `supplier=null`. 줄은 있는데 단가가 없으면 `price={unitPrice:null}`이고 supplier는 그 줄의 거래처다(C03).
-5. `notices`는 `BuildAlerts` 결과 전체다. status 필터와 무관하다. getHome의 `cautions`와 같은 내용이다.
-6. 200 `{items, counts:{core, later}, notices}`. 남은 일수 필드는 스키마에 없으므로 넣지 않는다.
+5. 200 `{items, counts:{core, later}}`. 남은 일수 필드는 스키마에 없으므로 넣지 않는다.
 
 ## 완료 조건
 
-필터해도 counts 유지, 빈 목록, 최근 줄 단가 null일 때 과거 단가를 쓰지 않는 것, null과 생략의 차이, 단가 변동 10% 경계, 다른 store 알림 누출 없음, notices가 같은 시각 getHome의 cautions와 같은 것을 검증한다.
+필터해도 counts 유지, 빈 목록, 최근 줄 단가 null일 때 과거 단가를 쓰지 않는 것, null과 생략의 차이, 다른 store 재료 누출 없음을 검증한다.

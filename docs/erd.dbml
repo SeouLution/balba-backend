@@ -32,8 +32,7 @@ Table ingredient {
   usage_unit text [note: '개']
   purchase_unit text [note: '판']
   content_quantity numeric [note: '구매 단위 1개에 든 사용 단위 수량 (1판 = 30개)']
-  shelf_life_days int [note: '재료별 기본 유통기한']
-  tags json [not null, default: '[]', note: 'RECOMMENDED | SHORT_SHELF_LIFE | EXPENSIVE 배열']
+  tags json [not null, default: '[]', note: 'RECOMMENDED | EXPENSIVE 배열']
 
   indexes {
     (store_id, name) [unique]

@@ -27,14 +27,13 @@ discounts / `RecommendDiscounts.execute(StoreContext) → DiscountRecommendation
 ## 처리 순서
 
 1. store를 확인한다. `date`는 요청 시각의 KST 오늘, `baseTime`은 `policy.discount.base_time`(17:00)이다.
-2. 요청 시각이 baseTime 전이거나 오늘이 휴무면 `recommendations=[]`, `surplusStock=[]`로 200.
-3. 한 읽기 트랜잭션에서 오늘 끝 기준 재고(C04), 레시피, 메뉴 판매가, 최근 단가, 영업시간과 내일 PlanOrder의 감소 재료 ID를 읽어 C06으로 계산한다. 발주 팩 수는 ordering에서만 계산한다.
-4. `recommendations`: id(`rec_<date>_<menuId>`), menu, unit, discount, startTime, quantity, reasonText, expectedSavings(양의 정수). 고른 순서대로 돌려준다.
-5. `surplusStock`: C06의 표대로 ingredientId 순. quantity는 사용 단위다.
-6. 200. DB에 쓰지 않고 외부 서비스를 부르지 않는다.
+2. 요청 시각이 baseTime 전이거나 오늘이 휴무면 `recommendations=[]`로 200.
+3. 한 읽기 트랜잭션에서 오늘 예측(추천 준비량, 만든 양, 최종 준비량), 레시피, 메뉴 판매가, 최근 단가, 영업시간을 읽어 C06으로 계산한다. 재고는 읽지 않는다.
+4. `recommendations`: id(`rec_<date>_<menuId>`), menu, unit, discount, startTime, quantity, reasonText, expectedSavings(양의 정수). expectedSavings 내림차순, 동률은 menuId 순이다.
+5. 200. DB에 쓰지 않고 외부 서비스를 부르지 않는다.
 
-재고·판매가·단가·유통기한 중 모르는 것이 있어 계산할 수 없는 재료와 메뉴는 결과에서 빠진다. 그 결과 빈 목록이 될 수 있다.
+판매가를 모르거나 원가를 아는 재료가 하나도 없는 메뉴는 결과에서 빠진다. 추천 준비량보다 더 만든 메뉴가 없으면 빈 목록이다.
 
 ## 완료 조건
 
-16:59/17:00, 휴무, 판매가·단가·유통기한을 모르는 경우, 재고 null과 0의 구분, 같은 임박 재고를 두 추천이 나눠 쓰는 경우(F03), 추천 시작 시각, ORDER_REDUCED 조건, 조회 전후 DB 행 수 불변, 다른 store 격리를 검증한다. 같은 데이터로 두 번 조회하면 같은 결과와 같은 id가 나온다.
+16:59/17:00, 휴무, 판매가·단가를 모르는 경우, 만든 양 미기록·기록·0과 준비량을 올려 잡은 경우(F03), 기대 절감이 0 이하인 후보 제외, 추천 시작 시각, 정렬, 조회 전후 DB 행 수 불변, 다른 store 격리를 검증한다. 같은 데이터로 두 번 조회하면 같은 결과와 같은 id가 나온다.
